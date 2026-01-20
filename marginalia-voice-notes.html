@@ -1212,52 +1212,181 @@
         return text.match(/[^.!?]+[.!?]+/g) || [text];
       };
 
+      const extractArticleContent = (html) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        // Remove unwanted elements
+        const removeSelectors = ['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript', '.ad', '.advertisement', '.sidebar', '.menu', '.navigation', '.comment', '.comments'];
+        removeSelectors.forEach(selector => {
+          doc.querySelectorAll(selector).forEach(el => el.remove());
+        });
+
+        // Get the title
+        const title = doc.querySelector('title')?.textContent ||
+                      doc.querySelector('h1')?.textContent ||
+                      doc.querySelector('meta[property="og:title"]')?.content ||
+                      'Untitled Article';
+
+        // Try to find main content in order of preference
+        const contentSelectors = [
+          'article',
+          '[role="main"]',
+          'main',
+          '.article-content',
+          '.post-content',
+          '.entry-content',
+          '.content',
+          '.article-body',
+          '.story-body',
+          '#content',
+          '#article'
+        ];
+
+        let contentElement = null;
+        for (const selector of contentSelectors) {
+          contentElement = doc.querySelector(selector);
+          if (contentElement) break;
+        }
+
+        // Fall back to body if no specific content area found
+        if (!contentElement) {
+          contentElement = doc.body;
+        }
+
+        // Extract text from paragraphs for cleaner content
+        const paragraphs = contentElement.querySelectorAll('p');
+        let text = '';
+
+        if (paragraphs.length > 3) {
+          // If we have paragraphs, use them for cleaner extraction
+          paragraphs.forEach(p => {
+            const pText = p.textContent.trim();
+            if (pText.length > 20) { // Filter out short paragraphs (likely UI elements)
+              text += pText + ' ';
+            }
+          });
+        } else {
+          // Fall back to all text content
+          text = contentElement.textContent;
+        }
+
+        // Clean up the text
+        text = text
+          .replace(/\s+/g, ' ')           // Collapse whitespace
+          .replace(/\n+/g, ' ')           // Remove newlines
+          .replace(/\t+/g, ' ')           // Remove tabs
+          .trim();
+
+        return { title: title.trim(), text };
+      };
+
       const fetchContent = async () => {
         if (!url.trim()) return;
-        
+
         setLoading(true);
-        
-        // Check if it's a PDF
-        if (url.toLowerCase().endsWith('.pdf')) {
-          try {
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            const pdf = await pdfjsLib.getDocument(url).promise;
-            let fullText = '';
-            
-            for (let i = 1; i <= pdf.numPages; i++) {
-              const page = await pdf.getPage(i);
-              const textContent = await page.getTextContent();
-              const pageText = textContent.items.map(item => item.str).join(' ');
-              fullText += pageText + ' ';
+
+        try {
+          // Check if it's a PDF
+          if (url.toLowerCase().endsWith('.pdf') || url.toLowerCase().includes('.pdf')) {
+            try {
+              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+              // Try direct load first, then CORS proxy
+              let pdf;
+              try {
+                pdf = await pdfjsLib.getDocument(url).promise;
+              } catch (corsError) {
+                // Try with CORS proxy
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                pdf = await pdfjsLib.getDocument(proxyUrl).promise;
+              }
+
+              let fullText = '';
+              for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + ' ';
+              }
+
+              const sentences = splitIntoSentences(fullText);
+              sentencesRef.current = sentences;
+
+              const newSource = addSource({
+                type: 'pdf',
+                title: url.split('/').pop()?.replace('.pdf', '') || 'PDF Document',
+                url: url,
+                content: fullText,
+                sentences: sentences
+              });
+
+              setContent({
+                title: newSource.title,
+                sentences: sentences,
+                url: url
+              });
+              setLoading(false);
+              return;
+            } catch (error) {
+              console.error('PDF fetch error:', error);
+              showToast('Could not load PDF. Try pasting content manually.');
+              setShowManualInput(true);
+              setLoading(false);
+              return;
             }
-            
-            const sentences = splitIntoSentences(fullText);
-            sentencesRef.current = sentences;
-            
-            const newSource = addSource({
-              type: 'pdf',
-              title: url.split('/').pop() || 'PDF Document',
-              url: url,
-              content: fullText,
-              sentences: sentences
-            });
-            
-            setContent({
-              title: newSource.title,
-              sentences: sentences,
-              url: url
-            });
-          } catch (error) {
-            console.error('PDF fetch error:', error);
-            showToast('Could not load PDF. Try pasting content manually.');
-            setShowManualInput(true);
           }
-        } else {
-          // For web articles, we'll use a CORS proxy or manual input
-          showToast('For web articles, please paste the content below');
+
+          // For web articles, use CORS proxy
+          showToast('Fetching article content...');
+          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+          const response = await fetch(proxyUrl);
+
+          if (!response.ok) {
+            throw new Error('Failed to fetch article');
+          }
+
+          const data = await response.json();
+          const html = data.contents;
+
+          if (!html) {
+            throw new Error('No content received');
+          }
+
+          const { title, text } = extractArticleContent(html);
+
+          if (text.length < 100) {
+            showToast('Could not extract enough content. Try pasting manually.');
+            setShowManualInput(true);
+            setLoading(false);
+            return;
+          }
+
+          const sentences = splitIntoSentences(text);
+          sentencesRef.current = sentences;
+
+          const newSource = addSource({
+            type: 'article',
+            title: title,
+            url: url,
+            content: text,
+            sentences: sentences
+          });
+
+          setContent({
+            title: newSource.title,
+            sentences: sentences,
+            url: url
+          });
+
+          showToast('Article loaded successfully!');
+
+        } catch (error) {
+          console.error('Fetch error:', error);
+          showToast('Could not fetch content. Try pasting manually.');
           setShowManualInput(true);
         }
-        
+
         setLoading(false);
       };
 
