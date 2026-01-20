@@ -1,0 +1,1861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marginalia - Voice Notes for Reading & Listening</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #faf8f5;
+      --bg-secondary: #f4f1eb;
+      --bg-tertiary: #ebe7df;
+      --text-primary: #2d2a26;
+      --text-secondary: #5c5751;
+      --text-muted: #8a847a;
+      --accent: #c45a3b;
+      --accent-hover: #a84830;
+      --accent-soft: #f8ebe7;
+      --border: #ddd8cf;
+      --shadow: rgba(45, 42, 38, 0.08);
+      --note-bg: #fff9e6;
+      --note-border: #f0e4b8;
+      --success: #4a7c59;
+      --recording: #c45a3b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+      background-blend-mode: overlay;
+      background-size: 200px;
+    }
+
+    .app-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-primary);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .logo-text {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .logo-tagline {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: -0.25rem;
+    }
+
+    /* Navigation */
+    .nav-tabs {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--bg-secondary);
+      padding: 0.25rem;
+      border-radius: 10px;
+    }
+
+    .nav-tab {
+      padding: 0.625rem 1.25rem;
+      border: none;
+      background: transparent;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .nav-tab:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-tab.active {
+      background: white;
+      color: var(--text-primary);
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+
+    /* Main Content */
+    .main-content {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 0;
+      min-height: calc(100vh - 80px);
+    }
+
+    .content-area {
+      padding: 2rem;
+      border-right: 1px solid var(--border);
+    }
+
+    .sidebar {
+      padding: 1.5rem;
+      background: var(--bg-secondary);
+      overflow-y: auto;
+      max-height: calc(100vh - 80px);
+      position: sticky;
+      top: 80px;
+    }
+
+    /* Input Section */
+    .input-section {
+      margin-bottom: 2rem;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .url-input {
+      flex: 1;
+      padding: 0.875rem 1.25rem;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9375rem;
+      background: white;
+      transition: all 0.2s ease;
+    }
+
+    .url-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .url-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .btn {
+      padding: 0.875rem 1.5rem;
+      border: none;
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+      background: var(--border);
+    }
+
+    .btn-icon {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+    }
+
+    /* Reader Section */
+    .reader-container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px var(--shadow);
+      overflow: hidden;
+    }
+
+    .reader-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .source-info h2 {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.375rem;
+      line-height: 1.3;
+    }
+
+    .source-meta {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .source-meta a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .source-meta a:hover {
+      text-decoration: underline;
+    }
+
+    .reader-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+
+    .reader-body {
+      padding: 2rem;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+
+    .reader-content {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.1875rem;
+      line-height: 1.8;
+      color: var(--text-primary);
+    }
+
+    .reader-content p {
+      margin-bottom: 1.25rem;
+    }
+
+    .sentence {
+      transition: all 0.2s ease;
+      border-radius: 4px;
+      padding: 0 2px;
+      margin: 0 -2px;
+    }
+
+    .sentence.current {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .sentence.has-note {
+      background: var(--note-bg);
+      border-bottom: 2px solid var(--note-border);
+      cursor: pointer;
+    }
+
+    .sentence.has-note:hover {
+      background: #fff3c4;
+    }
+
+    /* Playback Bar */
+    .playback-bar {
+      padding: 1rem 1.5rem;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .play-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .play-btn:hover {
+      background: var(--accent-hover);
+      transform: scale(1.05);
+    }
+
+    .play-btn.recording {
+      background: var(--recording);
+      animation: pulse 1.5s ease infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(196, 90, 59, 0.4); }
+      50% { box-shadow: 0 0 0 12px rgba(196, 90, 59, 0); }
+    }
+
+    .progress-container {
+      flex: 1;
+    }
+
+    .progress-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 0.375rem;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      transition: width 0.1s linear;
+    }
+
+    .progress-text {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .speed-control {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+
+    .speed-control label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .speed-control select {
+      border: none;
+      background: transparent;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    /* Voice Note Button */
+    .note-btn {
+      padding: 0.625rem 1rem;
+      background: var(--note-bg);
+      border: 2px solid var(--note-border);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .note-btn:hover {
+      background: #fff3c4;
+      border-color: #e6d9a5;
+    }
+
+    .note-btn.recording {
+      background: #fee2e2;
+      border-color: var(--recording);
+      color: var(--recording);
+      animation: pulse-note 1.5s ease infinite;
+    }
+
+    @keyframes pulse-note {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(196, 90, 59, 0.3); }
+      50% { box-shadow: 0 0 0 8px rgba(196, 90, 59, 0); }
+    }
+
+    /* Sidebar Notes */
+    .sidebar-title {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .notes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .note-card {
+      background: white;
+      border-radius: 10px;
+      padding: 1rem;
+      box-shadow: 0 2px 8px var(--shadow);
+      border-left: 3px solid var(--accent);
+    }
+
+    .note-position {
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-weight: 500;
+      margin-bottom: 0.375rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .note-text {
+      font-size: 0.9375rem;
+      color: var(--text-primary);
+      line-height: 1.5;
+      margin-bottom: 0.5rem;
+    }
+
+    .note-context {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      font-style: italic;
+      padding-left: 0.75rem;
+      border-left: 2px solid var(--border);
+    }
+
+    .note-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.75rem;
+    }
+
+    .note-action-btn {
+      padding: 0.375rem 0.625rem;
+      border: 1px solid var(--border);
+      background: var(--bg-primary);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .note-action-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .note-action-btn.delete:hover {
+      border-color: #dc2626;
+      color: #dc2626;
+    }
+
+    /* Library View */
+    .library-grid {
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    .library-date-group {
+      margin-bottom: 2rem;
+    }
+
+    .date-header {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      padding-bottom: 0.75rem;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    .library-item {
+      background: white;
+      border-radius: 12px;
+      padding: 1.25rem;
+      box-shadow: 0 2px 12px var(--shadow);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .library-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px var(--shadow);
+    }
+
+    .library-item-title {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 0.375rem;
+    }
+
+    .library-item-meta {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .library-item-type {
+      padding: 0.25rem 0.625rem;
+      background: var(--bg-secondary);
+      border-radius: 4px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    .library-item-type.article { background: #dbeafe; color: #1e40af; }
+    .library-item-type.pdf { background: #fee2e2; color: #991b1b; }
+    .library-item-type.youtube { background: #fce7f3; color: #9d174d; }
+    .library-item-type.podcast { background: #d1fae5; color: #065f46; }
+
+    .note-count {
+      padding: 0.375rem 0.75rem;
+      background: var(--note-bg);
+      border-radius: 20px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+    }
+
+    /* Media Player Section */
+    .media-container {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px var(--shadow);
+      overflow: hidden;
+    }
+
+    .youtube-container {
+      aspect-ratio: 16/9;
+      background: #000;
+      position: relative;
+    }
+
+    .youtube-container iframe {
+      width: 100%;
+      height: 100%;
+    }
+
+    .audio-visualizer {
+      height: 80px;
+      background: linear-gradient(180deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .audio-bar {
+      width: 4px;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: height 0.1s ease;
+    }
+
+    /* Empty States */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--text-muted);
+    }
+
+    .empty-state-icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      background: var(--bg-secondary);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+
+    .empty-state h3 {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.5rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-state p {
+      font-size: 0.9375rem;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    /* Export Section */
+    .export-section {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .export-btn {
+      width: 100%;
+      padding: 0.875rem;
+      background: var(--bg-tertiary);
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .export-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* Tabs for Media */
+    .media-tabs {
+      display: flex;
+      gap: 0;
+      background: var(--bg-tertiary);
+      border-radius: 8px;
+      padding: 0.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .media-tab {
+      flex: 1;
+      padding: 0.5rem 1rem;
+      border: none;
+      background: transparent;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .media-tab.active {
+      background: white;
+      color: var(--text-primary);
+      box-shadow: 0 1px 4px var(--shadow);
+    }
+
+    /* Subscription List */
+    .subscription-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .subscription-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .subscription-item:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .subscription-item.active {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent);
+    }
+
+    .subscription-thumb {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .subscription-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .subscription-title {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .subscription-channel {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--text-primary);
+      color: white;
+      padding: 0.875rem 1.5rem;
+      border-radius: 10px;
+      font-size: 0.9375rem;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      opacity: 0;
+      transition: all 0.3s ease;
+      z-index: 1000;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s ease;
+    }
+
+    .modal-overlay.show {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: white;
+      border-radius: 16px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow: auto;
+      transform: scale(0.95);
+      transition: all 0.2s ease;
+    }
+
+    .modal-overlay.show .modal {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.375rem;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: var(--bg-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+    }
+
+    .modal-close:hover {
+      background: var(--bg-tertiary);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.75rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .main-content {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        position: fixed;
+        right: -400px;
+        top: 80px;
+        height: calc(100vh - 80px);
+        width: 360px;
+        transition: right 0.3s ease;
+        box-shadow: -4px 0 20px var(--shadow);
+      }
+
+      .sidebar.open {
+        right: 0;
+      }
+
+      .content-area {
+        border-right: none;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .header {
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem;
+      }
+
+      .input-group {
+        flex-direction: column;
+      }
+
+      .reader-header {
+        flex-direction: column;
+      }
+
+      .playback-bar {
+        flex-wrap: wrap;
+      }
+    }
+
+    /* Scrollbar Styling */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-secondary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // Icons
+    const Icons = {
+      Play: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>,
+      Pause: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>,
+      Mic: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>,
+      MicOff: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>,
+      Book: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,
+      Library: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="12" y2="14"/></svg>,
+      Headphones: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>,
+      Link: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>,
+      Copy: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
+      Trash: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
+      X: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+      Menu: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>,
+      StickyNote: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>,
+      Download: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+      YouTube: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.2c-.3-1-1-1.8-2-2.1C19.6 3.5 12 3.5 12 3.5s-7.6 0-9.5.5c-1 .3-1.7 1.1-2 2.1C0 8.1 0 12 0 12s0 3.9.5 5.8c.3 1 1 1.8 2 2.1 1.9.5 9.5.5 9.5.5s7.6 0 9.5-.5c1-.3 1.7-1.1 2-2.1.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.5v-7l6.4 3.5-6.4 3.5z"/></svg>,
+      Podcast: () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="11" r="1"/><path d="M11 14a1 1 0 0 1 2 0v7h-2z"/><path d="M8.5 9a3.5 3.5 0 1 1 7 0"/><path d="M5.5 8a6.5 6.5 0 1 1 13 0"/></svg>,
+      Edit: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+      Plus: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+      FileText: () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>,
+    };
+
+    // Utility functions
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+    const formatDate = (date) => new Date(date).toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+    const formatTime = (seconds) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Toast Component
+    function Toast({ message, show }) {
+      return <div className={`toast ${show ? 'show' : ''}`}>{message}</div>;
+    }
+
+    // Main App
+    function App() {
+      const [activeTab, setActiveTab] = useState('reader');
+      const [sources, setSources] = useState(() => {
+        const saved = localStorage.getItem('marginalia_sources');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [currentSource, setCurrentSource] = useState(null);
+      const [notes, setNotes] = useState(() => {
+        const saved = localStorage.getItem('marginalia_notes');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [toast, setToast] = useState({ show: false, message: '' });
+      const [sidebarOpen, setSidebarOpen] = useState(false);
+
+      // Save to localStorage
+      useEffect(() => {
+        localStorage.setItem('marginalia_sources', JSON.stringify(sources));
+      }, [sources]);
+
+      useEffect(() => {
+        localStorage.setItem('marginalia_notes', JSON.stringify(notes));
+      }, [notes]);
+
+      const showToast = (message) => {
+        setToast({ show: true, message });
+        setTimeout(() => setToast({ show: false, message: '' }), 3000);
+      };
+
+      const addSource = (source) => {
+        const newSource = { ...source, id: generateId(), createdAt: new Date().toISOString() };
+        setSources(prev => [newSource, ...prev]);
+        setCurrentSource(newSource);
+        showToast('Source added to library');
+        return newSource;
+      };
+
+      const addNote = (note) => {
+        const newNote = { ...note, id: generateId(), createdAt: new Date().toISOString() };
+        setNotes(prev => [newNote, ...prev]);
+        showToast('Note saved');
+      };
+
+      const deleteNote = (noteId) => {
+        setNotes(prev => prev.filter(n => n.id !== noteId));
+        showToast('Note deleted');
+      };
+
+      const currentNotes = notes.filter(n => n.sourceId === currentSource?.id);
+
+      return (
+        <div className="app-container">
+          <header className="header">
+            <div className="logo">
+              <div className="logo-icon">M</div>
+              <div>
+                <div className="logo-text">Marginalia</div>
+                <div className="logo-tagline">Voice notes for reading & listening</div>
+              </div>
+            </div>
+            <nav className="nav-tabs">
+              <button 
+                className={`nav-tab ${activeTab === 'reader' ? 'active' : ''}`}
+                onClick={() => setActiveTab('reader')}
+              >
+                <Icons.Book /> Reader
+              </button>
+              <button 
+                className={`nav-tab ${activeTab === 'media' ? 'active' : ''}`}
+                onClick={() => setActiveTab('media')}
+              >
+                <Icons.Headphones /> Media
+              </button>
+              <button 
+                className={`nav-tab ${activeTab === 'library' ? 'active' : ''}`}
+                onClick={() => setActiveTab('library')}
+              >
+                <Icons.Library /> Library
+              </button>
+            </nav>
+            <button 
+              className="btn btn-secondary btn-icon"
+              style={{ display: 'none' }}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              <Icons.Menu />
+            </button>
+          </header>
+
+          <main className="main-content">
+            <div className="content-area">
+              {activeTab === 'reader' && (
+                <ReaderView 
+                  currentSource={currentSource}
+                  setCurrentSource={setCurrentSource}
+                  addSource={addSource}
+                  addNote={addNote}
+                  notes={currentNotes}
+                  showToast={showToast}
+                />
+              )}
+              {activeTab === 'media' && (
+                <MediaView 
+                  currentSource={currentSource}
+                  setCurrentSource={setCurrentSource}
+                  addSource={addSource}
+                  addNote={addNote}
+                  notes={currentNotes}
+                  showToast={showToast}
+                />
+              )}
+              {activeTab === 'library' && (
+                <LibraryView 
+                  sources={sources}
+                  notes={notes}
+                  setCurrentSource={(source) => {
+                    setCurrentSource(source);
+                    setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                  }}
+                  deleteNote={deleteNote}
+                />
+              )}
+            </div>
+
+            <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+              <NoteSidebar 
+                notes={currentNotes} 
+                currentSource={currentSource}
+                deleteNote={deleteNote}
+                showToast={showToast}
+              />
+            </aside>
+          </main>
+
+          <Toast {...toast} />
+        </div>
+      );
+    }
+
+    // Reader View Component
+    function ReaderView({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }) {
+      const [url, setUrl] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [content, setContent] = useState(null);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
+      const [isRecording, setIsRecording] = useState(false);
+      const [speed, setSpeed] = useState(1);
+      const [manualContent, setManualContent] = useState('');
+      const [showManualInput, setShowManualInput] = useState(false);
+      
+      const utteranceRef = useRef(null);
+      const recognitionRef = useRef(null);
+      const sentencesRef = useRef([]);
+
+      // Initialize speech recognition
+      useEffect(() => {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = true;
+          recognitionRef.current.interimResults = true;
+          
+          let finalTranscript = '';
+          
+          recognitionRef.current.onresult = (event) => {
+            let interimTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+              } else {
+                interimTranscript += event.results[i][0].transcript;
+              }
+            }
+          };
+          
+          recognitionRef.current.onend = () => {
+            if (finalTranscript.trim()) {
+              const sentence = sentencesRef.current[currentSentenceIndex];
+              addNote({
+                sourceId: currentSource?.id,
+                text: finalTranscript.trim(),
+                position: currentSentenceIndex,
+                context: sentence?.substring(0, 100) + '...',
+                type: 'voice'
+              });
+            }
+            finalTranscript = '';
+            setIsRecording(false);
+          };
+        }
+      }, [currentSource, currentSentenceIndex]);
+
+      // Load source content when currentSource changes
+      useEffect(() => {
+        if (currentSource && currentSource.type === 'article' && currentSource.content) {
+          setContent({
+            title: currentSource.title,
+            sentences: currentSource.sentences || splitIntoSentences(currentSource.content),
+            url: currentSource.url
+          });
+          sentencesRef.current = currentSource.sentences || splitIntoSentences(currentSource.content);
+        }
+      }, [currentSource]);
+
+      const splitIntoSentences = (text) => {
+        return text.match(/[^.!?]+[.!?]+/g) || [text];
+      };
+
+      const fetchContent = async () => {
+        if (!url.trim()) return;
+        
+        setLoading(true);
+        
+        // Check if it's a PDF
+        if (url.toLowerCase().endsWith('.pdf')) {
+          try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            const pdf = await pdfjsLib.getDocument(url).promise;
+            let fullText = '';
+            
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const page = await pdf.getPage(i);
+              const textContent = await page.getTextContent();
+              const pageText = textContent.items.map(item => item.str).join(' ');
+              fullText += pageText + ' ';
+            }
+            
+            const sentences = splitIntoSentences(fullText);
+            sentencesRef.current = sentences;
+            
+            const newSource = addSource({
+              type: 'pdf',
+              title: url.split('/').pop() || 'PDF Document',
+              url: url,
+              content: fullText,
+              sentences: sentences
+            });
+            
+            setContent({
+              title: newSource.title,
+              sentences: sentences,
+              url: url
+            });
+          } catch (error) {
+            console.error('PDF fetch error:', error);
+            showToast('Could not load PDF. Try pasting content manually.');
+            setShowManualInput(true);
+          }
+        } else {
+          // For web articles, we'll use a CORS proxy or manual input
+          showToast('For web articles, please paste the content below');
+          setShowManualInput(true);
+        }
+        
+        setLoading(false);
+      };
+
+      const handleManualSubmit = () => {
+        if (!manualContent.trim()) return;
+        
+        const sentences = splitIntoSentences(manualContent);
+        sentencesRef.current = sentences;
+        
+        const newSource = addSource({
+          type: 'article',
+          title: url || 'Pasted Content',
+          url: url || null,
+          content: manualContent,
+          sentences: sentences
+        });
+        
+        setContent({
+          title: newSource.title,
+          sentences: sentences,
+          url: url
+        });
+        
+        setShowManualInput(false);
+        setManualContent('');
+      };
+
+      const togglePlayback = () => {
+        if (isPlaying) {
+          window.speechSynthesis.cancel();
+          setIsPlaying(false);
+        } else {
+          speakFromIndex(currentSentenceIndex);
+        }
+      };
+
+      const speakFromIndex = (index) => {
+        if (!content || index >= content.sentences.length) {
+          setIsPlaying(false);
+          return;
+        }
+        
+        setIsPlaying(true);
+        const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
+        utterance.rate = speed;
+        
+        utterance.onend = () => {
+          const nextIndex = index + 1;
+          setCurrentSentenceIndex(nextIndex);
+          if (nextIndex < content.sentences.length) {
+            speakFromIndex(nextIndex);
+          } else {
+            setIsPlaying(false);
+          }
+        };
+        
+        utteranceRef.current = utterance;
+        window.speechSynthesis.speak(utterance);
+      };
+
+      const toggleRecording = () => {
+        if (isPlaying) {
+          window.speechSynthesis.cancel();
+          setIsPlaying(false);
+        }
+        
+        if (isRecording) {
+          recognitionRef.current?.stop();
+        } else {
+          recognitionRef.current?.start();
+          setIsRecording(true);
+        }
+      };
+
+      const progress = content ? (currentSentenceIndex / content.sentences.length) * 100 : 0;
+      const notedSentences = new Set(notes.map(n => n.position));
+
+      return (
+        <div>
+          <div className="input-section">
+            <div className="input-group">
+              <input
+                type="text"
+                className="url-input"
+                placeholder="Paste article URL or PDF link..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && fetchContent()}
+              />
+              <button className="btn btn-primary" onClick={fetchContent} disabled={loading}>
+                {loading ? 'Loading...' : <><Icons.Link /> Load</>}
+              </button>
+            </div>
+            
+            {showManualInput && (
+              <div style={{ marginTop: '1rem' }}>
+                <textarea
+                  className="url-input"
+                  style={{ width: '100%', minHeight: '200px', resize: 'vertical' }}
+                  placeholder="Paste article content here..."
+                  value={manualContent}
+                  onChange={(e) => setManualContent(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <button className="btn btn-primary" onClick={handleManualSubmit}>
+                    <Icons.Plus /> Add to Library
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => setShowManualInput(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {content ? (
+            <div className="reader-container">
+              <div className="reader-header">
+                <div className="source-info">
+                  <h2>{content.title}</h2>
+                  <div className="source-meta">
+                    <span className="library-item-type article">Article</span>
+                    {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /> Source</a>}
+                    <span>{content.sentences.length} sentences</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="reader-body">
+                <div className="reader-content">
+                  {content.sentences.map((sentence, index) => (
+                    <span
+                      key={index}
+                      className={`sentence ${index === currentSentenceIndex ? 'current' : ''} ${notedSentences.has(index) ? 'has-note' : ''}`}
+                      onClick={() => setCurrentSentenceIndex(index)}
+                    >
+                      {sentence}{' '}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="playback-bar">
+                <button className="play-btn" onClick={togglePlayback}>
+                  {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                </button>
+                
+                <div className="progress-container">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+                  </div>
+                  <div className="progress-text">
+                    <span>Sentence {currentSentenceIndex + 1} of {content.sentences.length}</span>
+                    <span>{Math.round(progress)}%</span>
+                  </div>
+                </div>
+                
+                <div className="speed-control">
+                  <label>Speed</label>
+                  <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
+                    <option value="0.5">0.5x</option>
+                    <option value="0.75">0.75x</option>
+                    <option value="1">1x</option>
+                    <option value="1.25">1.25x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="2">2x</option>
+                  </select>
+                </div>
+                
+                <button 
+                  className={`note-btn ${isRecording ? 'recording' : ''}`}
+                  onClick={toggleRecording}
+                >
+                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Add Note</>}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state-icon">📖</div>
+              <h3>Start Reading</h3>
+              <p>Paste a URL or article content to begin. The app will read it aloud and let you add voice notes as you go.</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Media View Component
+    function MediaView({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }) {
+      const [mediaType, setMediaType] = useState('youtube');
+      const [url, setUrl] = useState('');
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [currentTime, setCurrentTime] = useState(0);
+      const [duration, setDuration] = useState(0);
+      const [isRecording, setIsRecording] = useState(false);
+      const [videoId, setVideoId] = useState(null);
+      const [subscriptions, setSubscriptions] = useState(() => {
+        const saved = localStorage.getItem('marginalia_subscriptions');
+        return saved ? JSON.parse(saved) : [];
+      });
+      
+      const playerRef = useRef(null);
+      const recognitionRef = useRef(null);
+      const intervalRef = useRef(null);
+
+      // Save subscriptions
+      useEffect(() => {
+        localStorage.setItem('marginalia_subscriptions', JSON.stringify(subscriptions));
+      }, [subscriptions]);
+
+      // Initialize YouTube API
+      useEffect(() => {
+        if (!window.YT) {
+          const tag = document.createElement('script');
+          tag.src = 'https://www.youtube.com/iframe_api';
+          const firstScriptTag = document.getElementsByTagName('script')[0];
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        }
+      }, []);
+
+      // Initialize speech recognition
+      useEffect(() => {
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = true;
+          recognitionRef.current.interimResults = true;
+          
+          let finalTranscript = '';
+          
+          recognitionRef.current.onresult = (event) => {
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+              }
+            }
+          };
+          
+          recognitionRef.current.onend = () => {
+            if (finalTranscript.trim()) {
+              addNote({
+                sourceId: currentSource?.id,
+                text: finalTranscript.trim(),
+                timestamp: currentTime,
+                type: 'voice'
+              });
+            }
+            finalTranscript = '';
+            setIsRecording(false);
+          };
+        }
+      }, [currentSource, currentTime]);
+
+      const extractVideoId = (url) => {
+        const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+        return match ? match[1] : null;
+      };
+
+      const loadVideo = () => {
+        const id = extractVideoId(url);
+        if (!id) {
+          showToast('Invalid YouTube URL');
+          return;
+        }
+        
+        setVideoId(id);
+        
+        const newSource = addSource({
+          type: 'youtube',
+          title: 'YouTube Video',
+          url: url,
+          videoId: id
+        });
+        
+        // Initialize player after state update
+        setTimeout(() => {
+          if (window.YT && window.YT.Player) {
+            initPlayer(id);
+          } else {
+            window.onYouTubeIframeAPIReady = () => initPlayer(id);
+          }
+        }, 100);
+      };
+
+      const initPlayer = (id) => {
+        if (playerRef.current && playerRef.current.destroy) {
+          playerRef.current.destroy();
+        }
+        
+        playerRef.current = new window.YT.Player('youtube-player', {
+          videoId: id,
+          playerVars: {
+            autoplay: 0,
+            controls: 1,
+            modestbranding: 1,
+            rel: 0
+          },
+          events: {
+            onReady: (event) => {
+              setDuration(event.target.getDuration());
+            },
+            onStateChange: (event) => {
+              setIsPlaying(event.data === window.YT.PlayerState.PLAYING);
+              
+              if (event.data === window.YT.PlayerState.PLAYING) {
+                intervalRef.current = setInterval(() => {
+                  setCurrentTime(playerRef.current.getCurrentTime());
+                }, 500);
+              } else {
+                clearInterval(intervalRef.current);
+              }
+            }
+          }
+        });
+      };
+
+      const togglePlayback = () => {
+        if (!playerRef.current) return;
+        
+        if (isPlaying) {
+          playerRef.current.pauseVideo();
+        } else {
+          playerRef.current.playVideo();
+        }
+      };
+
+      const toggleRecording = () => {
+        if (isPlaying && playerRef.current) {
+          playerRef.current.pauseVideo();
+        }
+        
+        if (isRecording) {
+          recognitionRef.current?.stop();
+        } else {
+          recognitionRef.current?.start();
+          setIsRecording(true);
+        }
+      };
+
+      const addSubscription = () => {
+        const id = extractVideoId(url);
+        if (id) {
+          setSubscriptions(prev => [...prev, { id, url, title: 'YouTube Video', addedAt: new Date().toISOString() }]);
+          showToast('Added to subscriptions');
+        }
+      };
+
+      const progress = duration ? (currentTime / duration) * 100 : 0;
+
+      return (
+        <div>
+          <div className="media-tabs">
+            <button 
+              className={`media-tab ${mediaType === 'youtube' ? 'active' : ''}`}
+              onClick={() => setMediaType('youtube')}
+            >
+              <Icons.YouTube /> YouTube
+            </button>
+            <button 
+              className={`media-tab ${mediaType === 'podcast' ? 'active' : ''}`}
+              onClick={() => setMediaType('podcast')}
+            >
+              <Icons.Podcast /> Podcast
+            </button>
+          </div>
+
+          <div className="input-section">
+            <div className="input-group">
+              <input
+                type="text"
+                className="url-input"
+                placeholder={mediaType === 'youtube' ? 'Paste YouTube URL...' : 'Paste podcast RSS feed or episode URL...'}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+              <button className="btn btn-primary" onClick={loadVideo}>
+                <Icons.Play /> Load
+              </button>
+              <button className="btn btn-secondary" onClick={addSubscription} title="Add to subscriptions">
+                <Icons.Plus />
+              </button>
+            </div>
+          </div>
+
+          {videoId ? (
+            <div className="media-container">
+              <div className="youtube-container">
+                <div id="youtube-player"></div>
+              </div>
+              
+              <div className="playback-bar">
+                <button className="play-btn" onClick={togglePlayback}>
+                  {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                </button>
+                
+                <div className="progress-container">
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+                  </div>
+                  <div className="progress-text">
+                    <span>{formatTime(currentTime)}</span>
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
+                
+                <button 
+                  className={`note-btn ${isRecording ? 'recording' : ''}`}
+                  onClick={toggleRecording}
+                >
+                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Add Note</>}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-state-icon">🎧</div>
+              <h3>Add Media</h3>
+              <p>Paste a YouTube URL to start listening. Add voice notes at any timestamp while you listen.</p>
+            </div>
+          )}
+
+          {subscriptions.length > 0 && (
+            <div className="subscription-list">
+              <h4 style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Your Subscriptions</h4>
+              {subscriptions.map((sub, index) => (
+                <div 
+                  key={index} 
+                  className={`subscription-item ${videoId === sub.id ? 'active' : ''}`}
+                  onClick={() => { setUrl(sub.url); setVideoId(sub.id); }}
+                >
+                  <div className="subscription-thumb"><Icons.YouTube /></div>
+                  <div className="subscription-info">
+                    <div className="subscription-title">{sub.title}</div>
+                    <div className="subscription-channel">YouTube</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Library View Component
+    function LibraryView({ sources, notes, setCurrentSource, deleteNote }) {
+      const groupedSources = sources.reduce((acc, source) => {
+        const date = new Date(source.createdAt).toDateString();
+        if (!acc[date]) acc[date] = [];
+        acc[date].push(source);
+        return acc;
+      }, {});
+
+      const getNotesForSource = (sourceId) => notes.filter(n => n.sourceId === sourceId);
+
+      const exportToOneNote = () => {
+        let exportText = '# Marginalia Notes Export\n\n';
+        
+        Object.entries(groupedSources).forEach(([date, dateSources]) => {
+          exportText += `## ${date}\n\n`;
+          
+          dateSources.forEach(source => {
+            exportText += `### ${source.title}\n`;
+            exportText += `Type: ${source.type} | URL: ${source.url || 'N/A'}\n\n`;
+            
+            const sourceNotes = getNotesForSource(source.id);
+            if (sourceNotes.length > 0) {
+              exportText += '**Notes:**\n';
+              sourceNotes.forEach(note => {
+                const position = note.timestamp !== undefined 
+                  ? `[${formatTime(note.timestamp)}]` 
+                  : `[Sentence ${note.position + 1}]`;
+                exportText += `- ${position} ${note.text}\n`;
+              });
+            }
+            exportText += '\n---\n\n';
+          });
+        });
+        
+        navigator.clipboard.writeText(exportText);
+      };
+
+      return (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h2 style={{ fontFamily: 'Crimson Pro, serif', fontSize: '1.75rem' }}>Your Library</h2>
+            <button className="btn btn-secondary" onClick={exportToOneNote}>
+              <Icons.Copy /> Copy for OneNote
+            </button>
+          </div>
+
+          {sources.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">📚</div>
+              <h3>Library Empty</h3>
+              <p>Your sources and notes will appear here. Start by adding an article or video from the Reader or Media tabs.</p>
+            </div>
+          ) : (
+            <div className="library-grid">
+              {Object.entries(groupedSources).map(([date, dateSources]) => (
+                <div key={date} className="library-date-group">
+                  <div className="date-header">{formatDate(new Date(date))}</div>
+                  {dateSources.map(source => (
+                    <div 
+                      key={source.id} 
+                      className="library-item"
+                      onClick={() => setCurrentSource(source)}
+                    >
+                      <div>
+                        <div className="library-item-title">{source.title}</div>
+                        <div className="library-item-meta">
+                          <span className={`library-item-type ${source.type}`}>{source.type}</span>
+                          {source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
+                        </div>
+                      </div>
+                      <div className="note-count">
+                        <Icons.StickyNote />
+                        {getNotesForSource(source.id).length} notes
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Note Sidebar Component
+    function NoteSidebar({ notes, currentSource, deleteNote, showToast }) {
+      const copyNote = (note) => {
+        const position = note.timestamp !== undefined 
+          ? `[${formatTime(note.timestamp)}]` 
+          : `[Sentence ${note.position + 1}]`;
+        navigator.clipboard.writeText(`${position} ${note.text}`);
+        showToast('Note copied to clipboard');
+      };
+
+      const exportAllNotes = () => {
+        if (!currentSource || notes.length === 0) return;
+        
+        let exportText = `# Notes: ${currentSource.title}\n\n`;
+        notes.forEach(note => {
+          const position = note.timestamp !== undefined 
+            ? `[${formatTime(note.timestamp)}]` 
+            : `[Sentence ${note.position + 1}]`;
+          exportText += `${position} ${note.text}\n`;
+          if (note.context) exportText += `  > ${note.context}\n`;
+          exportText += '\n';
+        });
+        
+        navigator.clipboard.writeText(exportText);
+        showToast('All notes copied to clipboard');
+      };
+
+      return (
+        <div>
+          <div className="sidebar-title">
+            <Icons.StickyNote /> Notes ({notes.length})
+          </div>
+          
+          {notes.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)' }}>
+              <Icons.Mic />
+              <p style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
+                Click "Add Note" while reading to record voice notes
+              </p>
+            </div>
+          ) : (
+            <div className="notes-list">
+              {notes.map(note => (
+                <div key={note.id} className="note-card">
+                  <div className="note-position">
+                    {note.timestamp !== undefined 
+                      ? formatTime(note.timestamp)
+                      : `Sentence ${note.position + 1}`}
+                  </div>
+                  <div className="note-text">{note.text}</div>
+                  {note.context && (
+                    <div className="note-context">"{note.context}"</div>
+                  )}
+                  <div className="note-actions">
+                    <button className="note-action-btn" onClick={() => copyNote(note)}>
+                      <Icons.Copy /> Copy
+                    </button>
+                    <button className="note-action-btn delete" onClick={() => deleteNote(note.id)}>
+                      <Icons.Trash /> Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {notes.length > 0 && (
+            <div className="export-section">
+              <button className="export-btn" onClick={exportAllNotes}>
+                <Icons.Download /> Export Notes for OneNote
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Render the app
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
