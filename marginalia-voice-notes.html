@@ -139,7 +139,7 @@
     }
 
     .content-area {
-      padding: 2rem;
+      padding: 1.5rem;
       border-right: 1px solid var(--border);
     }
 
@@ -154,7 +154,7 @@
 
     /* Input Section */
     .input-section {
-      margin-bottom: 2rem;
+      margin-bottom: 1rem;
     }
 
     .input-group {
@@ -233,15 +233,19 @@
       border-radius: 16px;
       box-shadow: 0 4px 24px var(--shadow);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 200px);
     }
 
     .reader-header {
-      padding: 1.5rem;
+      padding: 1rem 1.5rem;
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: flex-start;
       justify-content: space-between;
       gap: 1rem;
+      flex-shrink: 0;
     }
 
     .source-info h2 {
@@ -278,8 +282,9 @@
     }
 
     .reader-body {
-      padding: 2rem;
-      max-height: 60vh;
+      padding: 1.5rem 2rem;
+      flex: 1;
+      min-height: 0;
       overflow-y: auto;
     }
 
@@ -318,12 +323,13 @@
 
     /* Playback Bar */
     .playback-bar {
-      padding: 1rem 1.5rem;
+      padding: 0.75rem 1.5rem;
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       display: flex;
       align-items: center;
       gap: 1rem;
+      flex-shrink: 0;
     }
 
     .play-btn {
@@ -1157,44 +1163,8 @@
       const utteranceRef = useRef(null);
       const recognitionRef = useRef(null);
       const sentencesRef = useRef([]);
-
-      // Initialize speech recognition
-      useEffect(() => {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-          
-          let finalTranscript = '';
-          
-          recognitionRef.current.onresult = (event) => {
-            let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
-              }
-            }
-          };
-          
-          recognitionRef.current.onend = () => {
-            if (finalTranscript.trim()) {
-              const sentence = sentencesRef.current[currentSentenceIndex];
-              addNote({
-                sourceId: currentSource?.id,
-                text: finalTranscript.trim(),
-                position: currentSentenceIndex,
-                context: sentence?.substring(0, 100) + '...',
-                type: 'voice'
-              });
-            }
-            finalTranscript = '';
-            setIsRecording(false);
-          };
-        }
-      }, [currentSource, currentSentenceIndex]);
+      const transcriptRef = useRef('');
+      const isStartingRef = useRef(false);
 
       // Load source content when currentSource changes
       useEffect(() => {
@@ -1452,12 +1422,105 @@
           window.speechSynthesis.cancel();
           setIsPlaying(false);
         }
-        
+
         if (isRecording) {
-          recognitionRef.current?.stop();
+          // Stop recording
+          setIsRecording(false);
+          isStartingRef.current = false;
+
+          try {
+            recognitionRef.current?.stop();
+          } catch (e) {}
+
+          // Save the note if we have transcript
+          setTimeout(() => {
+            if (transcriptRef.current.trim()) {
+              const sentence = sentencesRef.current[currentSentenceIndex];
+              addNote({
+                sourceId: currentSource?.id,
+                text: transcriptRef.current.trim(),
+                position: currentSentenceIndex,
+                context: sentence?.substring(0, 100) + '...',
+                type: 'voice'
+              });
+              showToast('Note saved!');
+            } else {
+              showToast('No speech detected. Try again.');
+            }
+            transcriptRef.current = '';
+            recognitionRef.current = null;
+          }, 100);
         } else {
-          recognitionRef.current?.start();
-          setIsRecording(true);
+          // Prevent multiple starts
+          if (isStartingRef.current) return;
+          isStartingRef.current = true;
+
+          // Check for browser support
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            showToast('Speech recognition not supported in this browser.');
+            isStartingRef.current = false;
+            return;
+          }
+
+          // Create fresh recognition instance
+          transcriptRef.current = '';
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = false;  // Single utterance mode
+          recognitionRef.current.interimResults = false;
+          recognitionRef.current.maxAlternatives = 1;
+
+          recognitionRef.current.onresult = (event) => {
+            const result = event.results[0];
+            if (result.isFinal) {
+              transcriptRef.current += result[0].transcript + ' ';
+            }
+          };
+
+          recognitionRef.current.onerror = (event) => {
+            console.log('Speech recognition error:', event.error);
+            // Only show error for real problems, not user-caused ones
+            if (event.error === 'not-allowed') {
+              showToast('Microphone access denied. Please allow in browser settings.');
+            } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+              showToast('Microphone error: ' + event.error);
+            }
+          };
+
+          recognitionRef.current.onend = () => {
+            // Recording ended - save what we have if anything
+            if (isRecording) {
+              setIsRecording(false);
+              isStartingRef.current = false;
+              if (transcriptRef.current.trim()) {
+                const sentence = sentencesRef.current[currentSentenceIndex];
+                addNote({
+                  sourceId: currentSource?.id,
+                  text: transcriptRef.current.trim(),
+                  position: currentSentenceIndex,
+                  context: sentence?.substring(0, 100) + '...',
+                  type: 'voice'
+                });
+                showToast('Note saved!');
+                transcriptRef.current = '';
+              } else {
+                showToast('No speech detected. Try again.');
+              }
+              recognitionRef.current = null;
+            }
+          };
+
+          try {
+            recognitionRef.current.start();
+            setIsRecording(true);
+            showToast('Listening... Speak your note.');
+          } catch (e) {
+            console.error('Could not start recognition:', e);
+            showToast('Could not start microphone. Please try again.');
+            setIsRecording(false);
+            isStartingRef.current = false;
+            recognitionRef.current = null;
+          }
         }
       };
 
@@ -1592,6 +1655,9 @@
       const playerRef = useRef(null);
       const recognitionRef = useRef(null);
       const intervalRef = useRef(null);
+      const transcriptRef = useRef('');
+      const isStartingRef = useRef(false);
+      const recordingStartTimeRef = useRef(0);
 
       // Save subscriptions
       useEffect(() => {
@@ -1607,39 +1673,6 @@
           firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
       }, []);
-
-      // Initialize speech recognition
-      useEffect(() => {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-          
-          let finalTranscript = '';
-          
-          recognitionRef.current.onresult = (event) => {
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
-              }
-            }
-          };
-          
-          recognitionRef.current.onend = () => {
-            if (finalTranscript.trim()) {
-              addNote({
-                sourceId: currentSource?.id,
-                text: finalTranscript.trim(),
-                timestamp: currentTime,
-                type: 'voice'
-              });
-            }
-            finalTranscript = '';
-            setIsRecording(false);
-          };
-        }
-      }, [currentSource, currentTime]);
 
       const extractVideoId = (url) => {
         const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
@@ -1718,12 +1751,101 @@
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
         }
-        
+
         if (isRecording) {
-          recognitionRef.current?.stop();
+          // Stop recording
+          setIsRecording(false);
+          isStartingRef.current = false;
+
+          try {
+            recognitionRef.current?.stop();
+          } catch (e) {}
+
+          // Save the note if we have transcript
+          setTimeout(() => {
+            if (transcriptRef.current.trim()) {
+              addNote({
+                sourceId: currentSource?.id,
+                text: transcriptRef.current.trim(),
+                timestamp: recordingStartTimeRef.current,
+                type: 'voice'
+              });
+              showToast('Note saved!');
+            } else {
+              showToast('No speech detected. Try again.');
+            }
+            transcriptRef.current = '';
+            recognitionRef.current = null;
+          }, 100);
         } else {
-          recognitionRef.current?.start();
-          setIsRecording(true);
+          // Prevent multiple starts
+          if (isStartingRef.current) return;
+          isStartingRef.current = true;
+
+          // Check for browser support
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SpeechRecognition) {
+            showToast('Speech recognition not supported in this browser.');
+            isStartingRef.current = false;
+            return;
+          }
+
+          // Create fresh recognition instance
+          transcriptRef.current = '';
+          recordingStartTimeRef.current = currentTime;
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.continuous = false;  // Single utterance mode
+          recognitionRef.current.interimResults = false;
+          recognitionRef.current.maxAlternatives = 1;
+
+          recognitionRef.current.onresult = (event) => {
+            const result = event.results[0];
+            if (result.isFinal) {
+              transcriptRef.current += result[0].transcript + ' ';
+            }
+          };
+
+          recognitionRef.current.onerror = (event) => {
+            console.log('Speech recognition error:', event.error);
+            if (event.error === 'not-allowed') {
+              showToast('Microphone access denied. Please allow in browser settings.');
+            } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
+              showToast('Microphone error: ' + event.error);
+            }
+          };
+
+          recognitionRef.current.onend = () => {
+            // Recording ended - save what we have if anything
+            if (isRecording) {
+              setIsRecording(false);
+              isStartingRef.current = false;
+              if (transcriptRef.current.trim()) {
+                addNote({
+                  sourceId: currentSource?.id,
+                  text: transcriptRef.current.trim(),
+                  timestamp: recordingStartTimeRef.current,
+                  type: 'voice'
+                });
+                showToast('Note saved!');
+                transcriptRef.current = '';
+              } else {
+                showToast('No speech detected. Try again.');
+              }
+              recognitionRef.current = null;
+            }
+          };
+
+          try {
+            recognitionRef.current.start();
+            setIsRecording(true);
+            showToast('Listening... Speak your note.');
+          } catch (e) {
+            console.error('Could not start recognition:', e);
+            showToast('Could not start microphone. Please try again.');
+            setIsRecording(false);
+            isStartingRef.current = false;
+            recognitionRef.current = null;
+          }
         }
       };
 
