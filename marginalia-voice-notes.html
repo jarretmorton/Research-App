@@ -1283,6 +1283,9 @@
       const utteranceRef = useRef(null);
       const recognitionRef = useRef(null);
       const sentencesRef = useRef([]);
+      const wasPlayingRef = useRef(false);
+      const interruptedSentenceRef = useRef(0);
+      const speakFromIndexRef = useRef(null);
 
       // Initialize speech recognition
       useEffect(() => {
@@ -1306,18 +1309,29 @@
           };
           
           recognitionRef.current.onend = () => {
+            const interruptedIndex = interruptedSentenceRef.current;
+            const shouldResume = wasPlayingRef.current;
+
             if (finalTranscript.trim()) {
-              const sentence = sentencesRef.current[currentSentenceIndex];
+              const sentence = sentencesRef.current[interruptedIndex];
               addNote({
                 sourceId: currentSource?.id,
                 text: finalTranscript.trim(),
-                position: currentSentenceIndex,
+                position: interruptedIndex,
                 context: sentence?.substring(0, 100) + '...',
                 type: 'voice'
               });
             }
             finalTranscript = '';
             setIsRecording(false);
+            wasPlayingRef.current = false;
+
+            // Resume playback from the interrupted sentence after a short delay
+            if (shouldResume && speakFromIndexRef.current) {
+              setTimeout(() => {
+                speakFromIndexRef.current(interruptedIndex);
+              }, 300);
+            }
           };
         }
       }, [currentSource, currentSentenceIndex]);
@@ -1549,39 +1563,51 @@
         }
       };
 
-      const speakFromIndex = (index) => {
+      const speakFromIndex = useCallback((index) => {
         if (!content || index >= content.sentences.length) {
           setIsPlaying(false);
           return;
         }
-        
+
         setIsPlaying(true);
+        setCurrentSentenceIndex(index);
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
-        
+
         utterance.onend = () => {
           const nextIndex = index + 1;
           setCurrentSentenceIndex(nextIndex);
-          if (nextIndex < content.sentences.length) {
-            speakFromIndex(nextIndex);
+          if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
+            speakFromIndexRef.current(nextIndex);
           } else {
             setIsPlaying(false);
           }
         };
-        
+
         utteranceRef.current = utterance;
         window.speechSynthesis.speak(utterance);
-      };
+      }, [content, speed]);
+
+      // Keep the ref updated with the latest speakFromIndex function
+      useEffect(() => {
+        speakFromIndexRef.current = speakFromIndex;
+      }, [speakFromIndex]);
 
       const toggleRecording = () => {
-        if (isPlaying) {
-          window.speechSynthesis.cancel();
-          setIsPlaying(false);
-        }
-        
         if (isRecording) {
           recognitionRef.current?.stop();
         } else {
+          // Store state before stopping playback
+          if (isPlaying) {
+            wasPlayingRef.current = true;
+            interruptedSentenceRef.current = currentSentenceIndex;
+            window.speechSynthesis.cancel();
+            setIsPlaying(false);
+          } else {
+            wasPlayingRef.current = false;
+            interruptedSentenceRef.current = currentSentenceIndex;
+          }
+
           recognitionRef.current?.start();
           setIsRecording(true);
         }
