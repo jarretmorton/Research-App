@@ -1041,6 +1041,15 @@
         showToast('Note deleted');
       };
 
+      const deleteSource = (sourceId) => {
+        setSources(prev => prev.filter(s => s.id !== sourceId));
+        setNotes(prev => prev.filter(n => n.sourceId !== sourceId));
+        if (currentSource?.id === sourceId) {
+          setCurrentSource(null);
+        }
+        showToast('Item deleted from library');
+      };
+
       const currentNotes = notes.filter(n => n.sourceId === currentSource?.id);
 
       return (
@@ -1105,7 +1114,7 @@
                 />
               )}
               {activeTab === 'library' && (
-                <LibraryView 
+                <LibraryView
                   sources={sources}
                   notes={notes}
                   setCurrentSource={(source) => {
@@ -1113,6 +1122,7 @@
                     setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
                   }}
                   deleteNote={deleteNote}
+                  deleteSource={deleteSource}
                 />
               )}
             </div>
@@ -1693,7 +1703,7 @@
     }
 
     // Library View Component
-    function LibraryView({ sources, notes, setCurrentSource, deleteNote }) {
+    function LibraryView({ sources, notes, setCurrentSource, deleteNote, deleteSource }) {
       const groupedSources = sources.reduce((acc, source) => {
         const date = new Date(source.createdAt).toDateString();
         if (!acc[date]) acc[date] = [];
@@ -1751,8 +1761,8 @@
                 <div key={date} className="library-date-group">
                   <div className="date-header">{formatDate(new Date(date))}</div>
                   {dateSources.map(source => (
-                    <div 
-                      key={source.id} 
+                    <div
+                      key={source.id}
                       className="library-item"
                       onClick={() => setCurrentSource(source)}
                     >
@@ -1763,9 +1773,23 @@
                           {source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
                         </div>
                       </div>
-                      <div className="note-count">
-                        <Icons.StickyNote />
-                        {getNotesForSource(source.id).length} notes
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div className="note-count">
+                          <Icons.StickyNote />
+                          {getNotesForSource(source.id).length} notes
+                        </div>
+                        <button
+                          className="note-action-btn delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm('Delete this item and all its notes?')) {
+                              deleteSource(source.id);
+                            }
+                          }}
+                          title="Delete item"
+                        >
+                          <Icons.Trash />
+                        </button>
                       </div>
                     </div>
                   ))}
