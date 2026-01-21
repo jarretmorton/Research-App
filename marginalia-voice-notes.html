@@ -1317,7 +1317,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.5</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.6</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1443,6 +1443,42 @@
       const wasPlayingRef = useRef(false);
       const interruptedSentenceRef = useRef(0);
       const speakFromIndexRef = useRef(null);
+      const lastBackPressRef = useRef(0);
+
+      // Skip to next sentence (stops current and plays next)
+      const skipForward = () => {
+        if (currentSentenceIndex < sentencesRef.current.length - 1) {
+          window.speechSynthesis.cancel();
+          const nextIndex = currentSentenceIndex + 1;
+          setCurrentSentenceIndex(nextIndex);
+          if (isPlaying && speakFromIndexRef.current) {
+            setTimeout(() => speakFromIndexRef.current(nextIndex), 50);
+          }
+        }
+      };
+
+      // Skip back - restart current sentence, or go to previous if pressed quickly
+      const skipBack = () => {
+        const now = Date.now();
+        const timeSinceLastPress = now - lastBackPressRef.current;
+        lastBackPressRef.current = now;
+
+        window.speechSynthesis.cancel();
+
+        // If pressed within 1.5 seconds, go to previous sentence
+        if (timeSinceLastPress < 1500 && currentSentenceIndex > 0) {
+          const prevIndex = currentSentenceIndex - 1;
+          setCurrentSentenceIndex(prevIndex);
+          if (isPlaying && speakFromIndexRef.current) {
+            setTimeout(() => speakFromIndexRef.current(prevIndex), 50);
+          }
+        } else {
+          // Restart current sentence
+          if (isPlaying && speakFromIndexRef.current) {
+            setTimeout(() => speakFromIndexRef.current(currentSentenceIndex), 50);
+          }
+        }
+      };
 
       // Load Whisper model on mount
       useEffect(() => {
@@ -2048,9 +2084,8 @@
               <div className="playback-bar">
                 <button
                   className="skip-btn"
-                  onClick={() => setCurrentSentenceIndex(Math.max(0, currentSentenceIndex - 1))}
-                  disabled={currentSentenceIndex === 0}
-                  title="Previous sentence"
+                  onClick={skipBack}
+                  title="Restart sentence / Previous (double-tap)"
                 >
                   <Icons.SkipBack />
                 </button>
@@ -2059,7 +2094,7 @@
                 </button>
                 <button
                   className="skip-btn"
-                  onClick={() => setCurrentSentenceIndex(Math.min(content.sentences.length - 1, currentSentenceIndex + 1))}
+                  onClick={skipForward}
                   disabled={currentSentenceIndex === content.sentences.length - 1}
                   title="Next sentence"
                 >
