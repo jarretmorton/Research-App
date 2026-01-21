@@ -1171,7 +1171,7 @@
             <div className="logo">
               <div className="logo-icon">M</div>
               <div>
-                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.3</span></div>
+                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1300,26 +1300,11 @@
           recognitionRef.current = new SpeechRecognition();
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
-          recognitionRef.current.lang = 'en-US';
-
-          recognitionRef.current.onaudiostart = () => {
-            console.log('Audio capture started');
-          };
-
-          recognitionRef.current.onspeechstart = () => {
-            console.log('Speech detected');
-          };
 
           recognitionRef.current.onresult = (event) => {
-            let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
-                transcriptRef.current += transcript;
-                console.log('Final transcript:', transcript);
-              } else {
-                interimTranscript += transcript;
-                console.log('Interim transcript:', transcript);
+                transcriptRef.current += event.results[i][0].transcript;
               }
             }
           };
@@ -1341,14 +1326,6 @@
               showToast('Microphone access denied. Please enable in browser settings.');
               isRecordingRef.current = false;
               setIsRecording(false);
-            } else if (event.error === 'network') {
-              showToast('Network error - speech recognition requires internet');
-              isRecordingRef.current = false;
-              setIsRecording(false);
-            } else if (event.error === 'audio-capture') {
-              showToast('No microphone found or microphone error');
-              isRecordingRef.current = false;
-              setIsRecording(false);
             }
           };
 
@@ -1367,8 +1344,6 @@
             }
             // Don't process transcript here - it's handled in toggleRecording
           };
-        } else {
-          showToast('Speech recognition not supported in this browser');
         }
       }, []);
 
@@ -1732,10 +1707,8 @@
 
           try {
             recognitionRef.current?.start();
-            showToast('Recording... speak now');
           } catch (e) {
             console.log('Failed to start recognition:', e);
-            showToast('Failed to start recording: ' + e.message);
             isRecordingRef.current = false;
             setIsRecording(false);
           }
@@ -1898,13 +1871,11 @@
           recognitionRef.current = new SpeechRecognition();
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
-          recognitionRef.current.lang = 'en-US';
 
           recognitionRef.current.onresult = (event) => {
             for (let i = event.resultIndex; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
-                transcriptRef.current += transcript;
+                transcriptRef.current += event.results[i][0].transcript;
               }
             }
           };
@@ -1923,14 +1894,6 @@
               }, 100);
             } else if (event.error === 'not-allowed') {
               showToast('Microphone access denied. Please enable in browser settings.');
-              isRecordingRef.current = false;
-              setIsRecording(false);
-            } else if (event.error === 'network') {
-              showToast('Network error - speech recognition requires internet');
-              isRecordingRef.current = false;
-              setIsRecording(false);
-            } else if (event.error === 'audio-capture') {
-              showToast('No microphone found or microphone error');
               isRecordingRef.current = false;
               setIsRecording(false);
             }
@@ -2078,8 +2041,6 @@
               timestamp: currentTime,
               type: 'voice'
             });
-          } else {
-            showToast('No speech detected - try speaking louder');
           }
           transcriptRef.current = '';
         } else {
@@ -2089,10 +2050,8 @@
 
           try {
             recognitionRef.current?.start();
-            showToast('Recording... speak now');
           } catch (e) {
             console.log('Failed to start recognition:', e);
-            showToast('Failed to start recording: ' + e.message);
             isRecordingRef.current = false;
             setIsRecording(false);
           }
