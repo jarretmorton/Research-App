@@ -8,6 +8,83 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script type="module">
+    // Whisper Speech Recognition using Transformers.js
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+
+    let whisperPipeline = null;
+    let isLoadingModel = false;
+    let modelLoadProgress = 0;
+
+    window.WhisperASR = {
+      isReady: false,
+      isLoading: false,
+      progress: 0,
+      error: null,
+
+      async loadModel(onProgress) {
+        if (whisperPipeline) {
+          this.isReady = true;
+          return true;
+        }
+        if (isLoadingModel) return false;
+
+        isLoadingModel = true;
+        this.isLoading = true;
+        this.error = null;
+
+        try {
+          whisperPipeline = await pipeline(
+            'automatic-speech-recognition',
+            'Xenova/whisper-tiny.en',
+            {
+              progress_callback: (progress) => {
+                if (progress.status === 'progress') {
+                  modelLoadProgress = Math.round(progress.progress);
+                  this.progress = modelLoadProgress;
+                  if (onProgress) onProgress(modelLoadProgress);
+                }
+              }
+            }
+          );
+          this.isReady = true;
+          this.isLoading = false;
+          isLoadingModel = false;
+          return true;
+        } catch (error) {
+          console.error('Failed to load Whisper model:', error);
+          this.error = error.message;
+          this.isLoading = false;
+          isLoadingModel = false;
+          return false;
+        }
+      },
+
+      async transcribe(audioBlob) {
+        if (!whisperPipeline) {
+          throw new Error('Whisper model not loaded');
+        }
+
+        try {
+          // Convert blob to array buffer
+          const arrayBuffer = await audioBlob.arrayBuffer();
+
+          // Transcribe
+          const result = await whisperPipeline(arrayBuffer, {
+            chunk_length_s: 30,
+            stride_length_s: 5,
+            language: 'english',
+            task: 'transcribe',
+          });
+
+          return result.text || '';
+        } catch (error) {
+          console.error('Transcription error:', error);
+          throw error;
+        }
+      }
+    };
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1171,7 +1248,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.3</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.0</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1285,68 +1362,43 @@
       const [showManualInput, setShowManualInput] = useState(false);
       const [showTextNote, setShowTextNote] = useState(false);
       const [textNote, setTextNote] = useState('');
-      
+      const [whisperReady, setWhisperReady] = useState(false);
+      const [whisperLoading, setWhisperLoading] = useState(false);
+      const [whisperProgress, setWhisperProgress] = useState(0);
+      const [isTranscribing, setIsTranscribing] = useState(false);
+
       const utteranceRef = useRef(null);
-      const recognitionRef = useRef(null);
+      const mediaRecorderRef = useRef(null);
+      const audioChunksRef = useRef([]);
       const sentencesRef = useRef([]);
       const wasPlayingRef = useRef(false);
       const interruptedSentenceRef = useRef(0);
       const speakFromIndexRef = useRef(null);
-      const isRecordingRef = useRef(false);
-      const transcriptRef = useRef('');
 
-      // Initialize speech recognition
+      // Load Whisper model on mount
       useEffect(() => {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-
-          recognitionRef.current.onresult = (event) => {
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              if (event.results[i].isFinal) {
-                transcriptRef.current += event.results[i][0].transcript;
-              }
+        const loadWhisper = async () => {
+          if (window.WhisperASR && !window.WhisperASR.isReady && !window.WhisperASR.isLoading) {
+            setWhisperLoading(true);
+            showToast('Loading speech recognition model...');
+            const success = await window.WhisperASR.loadModel((progress) => {
+              setWhisperProgress(progress);
+            });
+            setWhisperLoading(false);
+            if (success) {
+              setWhisperReady(true);
+              showToast('Speech recognition ready!');
+            } else {
+              showToast('Failed to load speech model. You can still use text notes.');
             }
-          };
+          } else if (window.WhisperASR?.isReady) {
+            setWhisperReady(true);
+          }
+        };
 
-          recognitionRef.current.onerror = (event) => {
-            console.log('Speech recognition error:', event.error);
-            if (event.error === 'no-speech' && isRecordingRef.current) {
-              // Keep listening - restart recognition
-              setTimeout(() => {
-                if (isRecordingRef.current) {
-                  try {
-                    recognitionRef.current?.start();
-                  } catch (e) {
-                    // Ignore
-                  }
-                }
-              }, 100);
-            } else if (event.error === 'not-allowed') {
-              showToast('Microphone access denied. Please enable in browser settings.');
-              isRecordingRef.current = false;
-              setIsRecording(false);
-            }
-          };
-
-          recognitionRef.current.onend = () => {
-            // If we're still supposed to be recording, restart
-            if (isRecordingRef.current) {
-              setTimeout(() => {
-                if (isRecordingRef.current) {
-                  try {
-                    recognitionRef.current?.start();
-                  } catch (e) {
-                    // Ignore
-                  }
-                }
-              }, 100);
-            }
-            // Don't process transcript here - it's handled in toggleRecording
-          };
-        }
+        // Delay loading slightly to let the page render first
+        const timer = setTimeout(loadWhisper, 1000);
+        return () => clearTimeout(timer);
       }, []);
 
       // Load source content and saved position when currentSource changes
@@ -1654,44 +1706,20 @@
         speakFromIndexRef.current = speakFromIndex;
       }, [speakFromIndex]);
 
-      const toggleRecording = () => {
+      const toggleRecording = async () => {
         if (isRecording) {
-          // Stop recording immediately
-          isRecordingRef.current = false;
+          // Stop recording
           setIsRecording(false);
 
-          try {
-            recognitionRef.current?.stop();
-          } catch (e) {
-            // Ignore stop errors
-          }
-
-          // Process transcript now
-          const interruptedIndex = interruptedSentenceRef.current;
-          const shouldResume = wasPlayingRef.current;
-
-          if (transcriptRef.current.trim()) {
-            const sentence = sentencesRef.current[interruptedIndex];
-            addNote({
-              sourceId: currentSource?.id,
-              text: transcriptRef.current.trim(),
-              position: interruptedIndex,
-              context: sentence?.substring(0, 100) + '...',
-              type: 'voice'
-            });
-          } else {
-            showToast('No speech detected - try speaking louder');
-          }
-          transcriptRef.current = '';
-          wasPlayingRef.current = false;
-
-          // Resume playback if it was playing before
-          if (shouldResume && speakFromIndexRef.current) {
-            setTimeout(() => {
-              speakFromIndexRef.current(interruptedIndex);
-            }, 300);
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
           }
         } else {
+          if (!whisperReady) {
+            showToast('Speech recognition still loading. Please wait or use text notes.');
+            return;
+          }
+
           // Store state before stopping playback
           if (isPlaying) {
             wasPlayingRef.current = true;
@@ -1703,16 +1731,68 @@
             interruptedSentenceRef.current = currentSentenceIndex;
           }
 
-          transcriptRef.current = '';
-          isRecordingRef.current = true;
-          setIsRecording(true);
-
           try {
-            recognitionRef.current?.start();
-          } catch (e) {
-            console.log('Failed to start recognition:', e);
-            isRecordingRef.current = false;
-            setIsRecording(false);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = mediaRecorder;
+
+            mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                audioChunksRef.current.push(event.data);
+              }
+            };
+
+            mediaRecorder.onstop = async () => {
+              // Stop all tracks
+              stream.getTracks().forEach(track => track.stop());
+
+              const interruptedIndex = interruptedSentenceRef.current;
+              const shouldResume = wasPlayingRef.current;
+
+              if (audioChunksRef.current.length > 0) {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                setIsTranscribing(true);
+                showToast('Transcribing...');
+
+                try {
+                  const transcript = await window.WhisperASR.transcribe(audioBlob);
+                  if (transcript && transcript.trim()) {
+                    const sentence = sentencesRef.current[interruptedIndex];
+                    addNote({
+                      sourceId: currentSource?.id,
+                      text: transcript.trim(),
+                      position: interruptedIndex,
+                      context: sentence?.substring(0, 100) + '...',
+                      type: 'voice'
+                    });
+                  } else {
+                    showToast('No speech detected - try speaking louder');
+                  }
+                } catch (error) {
+                  console.error('Transcription failed:', error);
+                  showToast('Transcription failed. Try again.');
+                }
+                setIsTranscribing(false);
+              }
+
+              wasPlayingRef.current = false;
+
+              // Resume playback if it was playing before
+              if (shouldResume && speakFromIndexRef.current) {
+                setTimeout(() => {
+                  speakFromIndexRef.current(interruptedIndex);
+                }, 300);
+              }
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            showToast('Recording... speak now');
+          } catch (error) {
+            console.error('Failed to start recording:', error);
+            showToast('Microphone access denied or unavailable');
           }
         }
       };
@@ -1844,10 +1924,14 @@
                 </div>
 
                 <button
-                  className={`note-btn ${isRecording ? 'recording' : ''}`}
+                  className={`note-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
                   onClick={toggleRecording}
+                  disabled={isTranscribing || whisperLoading}
                 >
-                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Voice</>}
+                  {whisperLoading ? `Loading ${whisperProgress}%` :
+                   isTranscribing ? 'Processing...' :
+                   isRecording ? <><Icons.MicOff /> Stop</> :
+                   <><Icons.Mic /> Voice</>}
                 </button>
                 <button
                   className="note-btn"
@@ -1883,11 +1967,25 @@
         return saved ? JSON.parse(saved) : [];
       });
       
+      const [whisperReady, setWhisperReady] = useState(false);
+      const [isTranscribing, setIsTranscribing] = useState(false);
+
       const playerRef = useRef(null);
-      const recognitionRef = useRef(null);
+      const mediaRecorderRef = useRef(null);
+      const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
-      const isRecordingRef = useRef(false);
-      const transcriptRef = useRef('');
+
+      // Check if Whisper is ready
+      useEffect(() => {
+        const checkWhisper = () => {
+          if (window.WhisperASR?.isReady) {
+            setWhisperReady(true);
+          }
+        };
+        checkWhisper();
+        const interval = setInterval(checkWhisper, 1000);
+        return () => clearInterval(interval);
+      }, []);
 
       // Save subscriptions
       useEffect(() => {
@@ -1901,58 +1999,6 @@
           tag.src = 'https://www.youtube.com/iframe_api';
           const firstScriptTag = document.getElementsByTagName('script')[0];
           firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-        }
-      }, []);
-
-      // Initialize speech recognition
-      useEffect(() => {
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          recognitionRef.current = new SpeechRecognition();
-          recognitionRef.current.continuous = true;
-          recognitionRef.current.interimResults = true;
-
-          recognitionRef.current.onresult = (event) => {
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-              if (event.results[i].isFinal) {
-                transcriptRef.current += event.results[i][0].transcript;
-              }
-            }
-          };
-
-          recognitionRef.current.onerror = (event) => {
-            console.log('Speech recognition error:', event.error);
-            if (event.error === 'no-speech' && isRecordingRef.current) {
-              setTimeout(() => {
-                if (isRecordingRef.current) {
-                  try {
-                    recognitionRef.current?.start();
-                  } catch (e) {
-                    // Ignore
-                  }
-                }
-              }, 100);
-            } else if (event.error === 'not-allowed') {
-              showToast('Microphone access denied. Please enable in browser settings.');
-              isRecordingRef.current = false;
-              setIsRecording(false);
-            }
-          };
-
-          recognitionRef.current.onend = () => {
-            if (isRecordingRef.current) {
-              setTimeout(() => {
-                if (isRecordingRef.current) {
-                  try {
-                    recognitionRef.current?.start();
-                  } catch (e) {
-                    // Ignore
-                  }
-                }
-              }, 100);
-            }
-            // Don't process transcript here - it's handled in toggleRecording
-          };
         }
       }, []);
 
@@ -2057,43 +2103,73 @@
         }
       };
 
-      const toggleRecording = () => {
+      const toggleRecording = async () => {
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
         }
 
         if (isRecording) {
-          // Stop recording immediately
-          isRecordingRef.current = false;
+          // Stop recording
           setIsRecording(false);
 
-          try {
-            recognitionRef.current?.stop();
-          } catch (e) {
-            // Ignore stop errors
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
           }
-
-          // Process transcript now
-          if (transcriptRef.current.trim()) {
-            addNote({
-              sourceId: currentSource?.id,
-              text: transcriptRef.current.trim(),
-              timestamp: currentTime,
-              type: 'voice'
-            });
-          }
-          transcriptRef.current = '';
         } else {
-          transcriptRef.current = '';
-          isRecordingRef.current = true;
-          setIsRecording(true);
+          if (!whisperReady) {
+            showToast('Speech recognition still loading. Please wait.');
+            return;
+          }
+
+          const recordingTime = currentTime;
 
           try {
-            recognitionRef.current?.start();
-          } catch (e) {
-            console.log('Failed to start recognition:', e);
-            isRecordingRef.current = false;
-            setIsRecording(false);
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioChunksRef.current = [];
+
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = mediaRecorder;
+
+            mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                audioChunksRef.current.push(event.data);
+              }
+            };
+
+            mediaRecorder.onstop = async () => {
+              stream.getTracks().forEach(track => track.stop());
+
+              if (audioChunksRef.current.length > 0) {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                setIsTranscribing(true);
+                showToast('Transcribing...');
+
+                try {
+                  const transcript = await window.WhisperASR.transcribe(audioBlob);
+                  if (transcript && transcript.trim()) {
+                    addNote({
+                      sourceId: currentSource?.id,
+                      text: transcript.trim(),
+                      timestamp: recordingTime,
+                      type: 'voice'
+                    });
+                  } else {
+                    showToast('No speech detected - try speaking louder');
+                  }
+                } catch (error) {
+                  console.error('Transcription failed:', error);
+                  showToast('Transcription failed. Try again.');
+                }
+                setIsTranscribing(false);
+              }
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+            showToast('Recording... speak now');
+          } catch (error) {
+            console.error('Failed to start recording:', error);
+            showToast('Microphone access denied or unavailable');
           }
         }
       };
