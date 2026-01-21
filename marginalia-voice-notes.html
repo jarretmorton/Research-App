@@ -1454,7 +1454,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.8</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.9</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2104,7 +2104,7 @@
 
               const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
 
-              if (audioBlob.size < 1000) {
+              if (audioBlob.size < 500) {
                 showToast('Recording too short. Try again.');
                 if (wasPlaying && speakFromIndexRef.current) {
                   setTimeout(() => speakFromIndexRef.current(notePosition), 300);
@@ -2552,7 +2552,7 @@
               }
             };
 
-            mediaRecorder.start();
+            mediaRecorder.start(100);
             setIsRecording(true);
             showToast('Recording... speak now');
           } catch (error) {
