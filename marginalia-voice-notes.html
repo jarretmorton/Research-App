@@ -1627,9 +1627,39 @@
 
       const toggleRecording = () => {
         if (isRecording) {
-          // Stop recording - set ref first so onend knows not to restart
+          // Stop recording immediately
           isRecordingRef.current = false;
-          recognitionRef.current?.stop();
+          setIsRecording(false);
+
+          try {
+            recognitionRef.current?.stop();
+          } catch (e) {
+            // Ignore stop errors
+          }
+
+          // Process transcript now
+          const interruptedIndex = interruptedSentenceRef.current;
+          const shouldResume = wasPlayingRef.current;
+
+          if (transcriptRef.current.trim()) {
+            const sentence = sentencesRef.current[interruptedIndex];
+            addNote({
+              sourceId: currentSource?.id,
+              text: transcriptRef.current.trim(),
+              position: interruptedIndex,
+              context: sentence?.substring(0, 100) + '...',
+              type: 'voice'
+            });
+          }
+          transcriptRef.current = '';
+          wasPlayingRef.current = false;
+
+          // Resume playback if it was playing before
+          if (shouldResume && speakFromIndexRef.current) {
+            setTimeout(() => {
+              speakFromIndexRef.current(interruptedIndex);
+            }, 300);
+          }
         } else {
           // Store state before stopping playback
           if (isPlaying) {
@@ -1644,8 +1674,15 @@
 
           transcriptRef.current = '';
           isRecordingRef.current = true;
-          recognitionRef.current?.start();
           setIsRecording(true);
+
+          try {
+            recognitionRef.current?.start();
+          } catch (e) {
+            console.log('Failed to start recognition:', e);
+            isRecordingRef.current = false;
+            setIsRecording(false);
+          }
         }
       };
 
@@ -1940,13 +1977,38 @@
         }
 
         if (isRecording) {
+          // Stop recording immediately
           isRecordingRef.current = false;
-          recognitionRef.current?.stop();
+          setIsRecording(false);
+
+          try {
+            recognitionRef.current?.stop();
+          } catch (e) {
+            // Ignore stop errors
+          }
+
+          // Process transcript now
+          if (transcriptRef.current.trim()) {
+            addNote({
+              sourceId: currentSource?.id,
+              text: transcriptRef.current.trim(),
+              timestamp: currentTime,
+              type: 'voice'
+            });
+          }
+          transcriptRef.current = '';
         } else {
           transcriptRef.current = '';
           isRecordingRef.current = true;
-          recognitionRef.current?.start();
           setIsRecording(true);
+
+          try {
+            recognitionRef.current?.start();
+          } catch (e) {
+            console.log('Failed to start recognition:', e);
+            isRecordingRef.current = false;
+            setIsRecording(false);
+          }
         }
       };
 
