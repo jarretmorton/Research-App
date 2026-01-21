@@ -10,13 +10,15 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script type="module">
     // Whisper Speech Recognition using Transformers.js
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+
+    // Configure transformers.js
+    env.allowLocalModels = false;
 
     let whisperPipeline = null;
     let isLoadingModel = false;
-    let modelLoadProgress = 0;
 
-    window.WhisperASR = {
+    const whisperASR = {
       isReady: false,
       isLoading: false,
       progress: 0,
@@ -34,19 +36,21 @@
         this.error = null;
 
         try {
+          console.log('Loading Whisper model...');
           whisperPipeline = await pipeline(
             'automatic-speech-recognition',
             'Xenova/whisper-tiny.en',
             {
               progress_callback: (progress) => {
                 if (progress.status === 'progress') {
-                  modelLoadProgress = Math.round(progress.progress);
-                  this.progress = modelLoadProgress;
-                  if (onProgress) onProgress(modelLoadProgress);
+                  this.progress = Math.round(progress.progress);
+                  if (onProgress) onProgress(this.progress);
                 }
+                console.log('Model load progress:', progress);
               }
             }
           );
+          console.log('Whisper model loaded successfully');
           this.isReady = true;
           this.isLoading = false;
           isLoadingModel = false;
@@ -66,24 +70,37 @@
         }
 
         try {
-          // Convert blob to array buffer
-          const arrayBuffer = await audioBlob.arrayBuffer();
-
-          // Transcribe
-          const result = await whisperPipeline(arrayBuffer, {
+          console.log('Transcribing audio...', audioBlob.size, 'bytes');
+          const result = await whisperPipeline(audioBlob, {
             chunk_length_s: 30,
             stride_length_s: 5,
             language: 'english',
             task: 'transcribe',
           });
-
+          console.log('Transcription result:', result);
           return result.text || '';
         } catch (error) {
           console.error('Transcription error:', error);
           throw error;
         }
+      },
+
+      getSupportedMimeType() {
+        const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'];
+        for (const type of types) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            console.log('Using audio format:', type);
+            return type;
+          }
+        }
+        console.log('Using default audio format');
+        return '';
       }
     };
+
+    // Make it globally available
+    window.WhisperASR = whisperASR;
+    console.log('WhisperASR initialized');
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1248,7 +1265,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.0</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.1</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1377,10 +1394,38 @@
 
       // Load Whisper model on mount
       useEffect(() => {
+        let attempts = 0;
+        const maxAttempts = 10;
+
         const loadWhisper = async () => {
-          if (window.WhisperASR && !window.WhisperASR.isReady && !window.WhisperASR.isLoading) {
-            setWhisperLoading(true);
-            showToast('Loading speech recognition model...');
+          console.log('Attempting to load Whisper, attempt:', attempts + 1);
+
+          // Wait for WhisperASR to be available from the module
+          if (!window.WhisperASR) {
+            attempts++;
+            if (attempts < maxAttempts) {
+              console.log('WhisperASR not yet available, retrying...');
+              setTimeout(loadWhisper, 500);
+            } else {
+              console.error('WhisperASR failed to initialize');
+              showToast('Speech recognition unavailable. Use text notes.');
+            }
+            return;
+          }
+
+          if (window.WhisperASR.isReady) {
+            setWhisperReady(true);
+            return;
+          }
+
+          if (window.WhisperASR.isLoading) {
+            return;
+          }
+
+          setWhisperLoading(true);
+          showToast('Loading speech recognition model (first time only)...');
+
+          try {
             const success = await window.WhisperASR.loadModel((progress) => {
               setWhisperProgress(progress);
             });
@@ -1391,13 +1436,15 @@
             } else {
               showToast('Failed to load speech model. You can still use text notes.');
             }
-          } else if (window.WhisperASR?.isReady) {
-            setWhisperReady(true);
+          } catch (error) {
+            console.error('Error loading Whisper:', error);
+            setWhisperLoading(false);
+            showToast('Speech recognition failed to load. Use text notes.');
           }
         };
 
-        // Delay loading slightly to let the page render first
-        const timer = setTimeout(loadWhisper, 1000);
+        // Start loading after a short delay
+        const timer = setTimeout(loadWhisper, 500);
         return () => clearTimeout(timer);
       }, []);
 
@@ -1735,7 +1782,10 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioChunksRef.current = [];
 
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
+            const mediaRecorder = mimeType
+              ? new MediaRecorder(stream, { mimeType })
+              : new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
 
             mediaRecorder.ondataavailable = (event) => {
@@ -2127,7 +2177,10 @@
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioChunksRef.current = [];
 
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
+            const mediaRecorder = mimeType
+              ? new MediaRecorder(stream, { mimeType })
+              : new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
 
             mediaRecorder.ondataavailable = (event) => {
