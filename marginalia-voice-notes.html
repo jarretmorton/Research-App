@@ -71,13 +71,37 @@
 
         try {
           console.log('Transcribing audio...', audioBlob.size, 'bytes');
-          const result = await whisperPipeline(audioBlob, {
+
+          // Decode audio blob to raw audio samples using Web Audio API
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+          // Get audio data as Float32Array (mono, 16kHz for Whisper)
+          let audioData;
+          if (audioBuffer.numberOfChannels > 1) {
+            // Mix down to mono
+            const left = audioBuffer.getChannelData(0);
+            const right = audioBuffer.getChannelData(1);
+            audioData = new Float32Array(left.length);
+            for (let i = 0; i < left.length; i++) {
+              audioData[i] = (left[i] + right[i]) / 2;
+            }
+          } else {
+            audioData = audioBuffer.getChannelData(0);
+          }
+
+          console.log('Audio decoded:', audioData.length, 'samples at', audioBuffer.sampleRate, 'Hz');
+
+          const result = await whisperPipeline(audioData, {
             chunk_length_s: 30,
             stride_length_s: 5,
             language: 'english',
             task: 'transcribe',
+            sampling_rate: audioBuffer.sampleRate,
           });
           console.log('Transcription result:', result);
+          await audioContext.close();
           return result.text || '';
         } catch (error) {
           console.error('Transcription error:', error);
@@ -1265,7 +1289,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.1</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
