@@ -1317,7 +1317,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.6</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.7</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1538,7 +1538,7 @@
 
       // Load source content and saved position when currentSource changes
       useEffect(() => {
-        if (currentSource && currentSource.type === 'article' && currentSource.content) {
+        if (currentSource && (currentSource.type === 'article' || currentSource.type === 'pdf') && currentSource.content) {
           setContent({
             title: currentSource.title,
             sentences: currentSource.sentences || splitIntoSentences(currentSource.content),
