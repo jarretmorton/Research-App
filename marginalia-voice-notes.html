@@ -1289,7 +1289,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.3</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.4</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1617,25 +1617,46 @@
               pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
               showToast('Loading PDF...');
 
-              // Fetch PDF as binary data
+              // Fetch PDF as binary data - try multiple methods
               let pdfData;
+              const corsProxies = [
+                (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+                (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+                (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+              ];
+
+              // Try direct fetch first
               try {
-                // Try direct fetch first
-                const response = await fetch(url);
+                console.log('Trying direct PDF fetch...');
+                const response = await fetch(url, { mode: 'cors' });
                 if (response.ok) {
                   pdfData = await response.arrayBuffer();
-                } else {
-                  throw new Error('Direct fetch failed');
+                  console.log('Direct fetch succeeded');
                 }
-              } catch (corsError) {
-                console.log('Direct PDF fetch failed, trying proxy...');
-                // Try with CORS proxy
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                const proxyResponse = await fetch(proxyUrl);
-                if (!proxyResponse.ok) {
-                  throw new Error('Proxy fetch failed');
+              } catch (e) {
+                console.log('Direct fetch failed:', e.message);
+              }
+
+              // Try proxies if direct failed
+              if (!pdfData) {
+                for (const proxyFn of corsProxies) {
+                  try {
+                    const proxyUrl = proxyFn(url);
+                    console.log('Trying proxy:', proxyUrl);
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                      pdfData = await response.arrayBuffer();
+                      console.log('Proxy fetch succeeded:', pdfData.byteLength, 'bytes');
+                      break;
+                    }
+                  } catch (e) {
+                    console.log('Proxy failed:', e.message);
+                  }
                 }
-                pdfData = await proxyResponse.arrayBuffer();
+              }
+
+              if (!pdfData) {
+                throw new Error('All fetch methods failed');
               }
 
               console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
