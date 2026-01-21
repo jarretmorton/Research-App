@@ -1286,6 +1286,8 @@
       const wasPlayingRef = useRef(false);
       const interruptedSentenceRef = useRef(0);
       const speakFromIndexRef = useRef(null);
+      const isRecordingRef = useRef(false);
+      const transcriptRef = useRef('');
 
       // Initialize speech recognition
       useEffect(() => {
@@ -1295,57 +1297,64 @@
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
 
-          let finalTranscript = '';
-          let manualStop = false;
-
           recognitionRef.current.onresult = (event) => {
             for (let i = event.resultIndex; i < event.results.length; i++) {
               if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                transcriptRef.current += event.results[i][0].transcript;
               }
             }
           };
 
           recognitionRef.current.onerror = (event) => {
             console.log('Speech recognition error:', event.error);
-            // Don't treat no-speech as an error - user just didn't say anything yet
-            if (event.error === 'no-speech') {
-              // Restart recognition to keep listening
-              try {
-                recognitionRef.current?.start();
-              } catch (e) {
-                // Already running, ignore
-              }
-            } else if (event.error === 'aborted') {
-              // Recognition was aborted, likely by user - do nothing
+            if (event.error === 'no-speech' && isRecordingRef.current) {
+              // Keep listening - restart recognition
+              setTimeout(() => {
+                if (isRecordingRef.current) {
+                  try {
+                    recognitionRef.current?.start();
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }, 100);
             } else if (event.error === 'not-allowed') {
               showToast('Microphone access denied. Please enable in browser settings.');
+              isRecordingRef.current = false;
               setIsRecording(false);
             }
           };
 
           recognitionRef.current.onend = () => {
-            // Only process if this was a manual stop (user clicked Stop)
-            if (!manualStop) {
-              // Recognition ended unexpectedly, try to restart if still recording
+            // If we're still supposed to be recording, restart
+            if (isRecordingRef.current) {
+              setTimeout(() => {
+                if (isRecordingRef.current) {
+                  try {
+                    recognitionRef.current?.start();
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }, 100);
               return;
             }
 
+            // Recording stopped - process transcript
             const interruptedIndex = interruptedSentenceRef.current;
             const shouldResume = wasPlayingRef.current;
 
-            if (finalTranscript.trim()) {
+            if (transcriptRef.current.trim()) {
               const sentence = sentencesRef.current[interruptedIndex];
               addNote({
                 sourceId: currentSource?.id,
-                text: finalTranscript.trim(),
+                text: transcriptRef.current.trim(),
                 position: interruptedIndex,
                 context: sentence?.substring(0, 100) + '...',
                 type: 'voice'
               });
             }
-            finalTranscript = '';
-            manualStop = false;
+            transcriptRef.current = '';
             setIsRecording(false);
             wasPlayingRef.current = false;
 
@@ -1356,9 +1365,6 @@
               }, 300);
             }
           };
-
-          // Expose manualStop setter for toggleRecording
-          recognitionRef.current.setManualStop = (value) => { manualStop = value; };
         }
       }, [currentSource, currentSentenceIndex]);
 
@@ -1621,8 +1627,8 @@
 
       const toggleRecording = () => {
         if (isRecording) {
-          // Signal that this is a manual stop so onend processes the transcript
-          recognitionRef.current?.setManualStop?.(true);
+          // Stop recording - set ref first so onend knows not to restart
+          isRecordingRef.current = false;
           recognitionRef.current?.stop();
         } else {
           // Store state before stopping playback
@@ -1636,6 +1642,8 @@
             interruptedSentenceRef.current = currentSentenceIndex;
           }
 
+          transcriptRef.current = '';
+          isRecordingRef.current = true;
           recognitionRef.current?.start();
           setIsRecording(true);
         }
@@ -1772,6 +1780,8 @@
       const playerRef = useRef(null);
       const recognitionRef = useRef(null);
       const intervalRef = useRef(null);
+      const isRecordingRef = useRef(false);
+      const transcriptRef = useRef('');
 
       // Save subscriptions
       useEffect(() => {
@@ -1796,53 +1806,58 @@
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
 
-          let finalTranscript = '';
-          let manualStop = false;
-
           recognitionRef.current.onresult = (event) => {
             for (let i = event.resultIndex; i < event.results.length; i++) {
               if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                transcriptRef.current += event.results[i][0].transcript;
               }
             }
           };
 
           recognitionRef.current.onerror = (event) => {
             console.log('Speech recognition error:', event.error);
-            if (event.error === 'no-speech') {
-              // Restart recognition to keep listening
-              try {
-                recognitionRef.current?.start();
-              } catch (e) {
-                // Already running, ignore
-              }
-            } else if (event.error === 'aborted') {
-              // Recognition was aborted - do nothing
+            if (event.error === 'no-speech' && isRecordingRef.current) {
+              setTimeout(() => {
+                if (isRecordingRef.current) {
+                  try {
+                    recognitionRef.current?.start();
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }, 100);
             } else if (event.error === 'not-allowed') {
               showToast('Microphone access denied. Please enable in browser settings.');
+              isRecordingRef.current = false;
               setIsRecording(false);
             }
           };
 
           recognitionRef.current.onend = () => {
-            if (!manualStop) {
+            if (isRecordingRef.current) {
+              setTimeout(() => {
+                if (isRecordingRef.current) {
+                  try {
+                    recognitionRef.current?.start();
+                  } catch (e) {
+                    // Ignore
+                  }
+                }
+              }, 100);
               return;
             }
 
-            if (finalTranscript.trim()) {
+            if (transcriptRef.current.trim()) {
               addNote({
                 sourceId: currentSource?.id,
-                text: finalTranscript.trim(),
+                text: transcriptRef.current.trim(),
                 timestamp: currentTime,
                 type: 'voice'
               });
             }
-            finalTranscript = '';
-            manualStop = false;
+            transcriptRef.current = '';
             setIsRecording(false);
           };
-
-          recognitionRef.current.setManualStop = (value) => { manualStop = value; };
         }
       }, [currentSource, currentTime]);
 
@@ -1925,9 +1940,11 @@
         }
 
         if (isRecording) {
-          recognitionRef.current?.setManualStop?.(true);
+          isRecordingRef.current = false;
           recognitionRef.current?.stop();
         } else {
+          transcriptRef.current = '';
+          isRecordingRef.current = true;
           recognitionRef.current?.start();
           setIsRecording(true);
         }
