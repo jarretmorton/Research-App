@@ -1337,36 +1337,11 @@
                   }
                 }
               }, 100);
-              return;
             }
-
-            // Recording stopped - process transcript
-            const interruptedIndex = interruptedSentenceRef.current;
-            const shouldResume = wasPlayingRef.current;
-
-            if (transcriptRef.current.trim()) {
-              const sentence = sentencesRef.current[interruptedIndex];
-              addNote({
-                sourceId: currentSource?.id,
-                text: transcriptRef.current.trim(),
-                position: interruptedIndex,
-                context: sentence?.substring(0, 100) + '...',
-                type: 'voice'
-              });
-            }
-            transcriptRef.current = '';
-            setIsRecording(false);
-            wasPlayingRef.current = false;
-
-            // Resume playback from the interrupted sentence after a short delay
-            if (shouldResume && speakFromIndexRef.current) {
-              setTimeout(() => {
-                speakFromIndexRef.current(interruptedIndex);
-              }, 300);
-            }
+            // Don't process transcript here - it's handled in toggleRecording
           };
         }
-      }, [currentSource, currentSentenceIndex]);
+      }, []);
 
       // Load source content when currentSource changes
       useEffect(() => {
@@ -1881,22 +1856,11 @@
                   }
                 }
               }, 100);
-              return;
             }
-
-            if (transcriptRef.current.trim()) {
-              addNote({
-                sourceId: currentSource?.id,
-                text: transcriptRef.current.trim(),
-                timestamp: currentTime,
-                type: 'voice'
-              });
-            }
-            transcriptRef.current = '';
-            setIsRecording(false);
+            // Don't process transcript here - it's handled in toggleRecording
           };
         }
-      }, [currentSource, currentTime]);
+      }, []);
 
       const extractVideoId = (url) => {
         const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
