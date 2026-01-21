@@ -1294,21 +1294,43 @@
           recognitionRef.current = new SpeechRecognition();
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
-          
+
           let finalTranscript = '';
-          
+          let manualStop = false;
+
           recognitionRef.current.onresult = (event) => {
-            let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
               if (event.results[i].isFinal) {
                 finalTranscript += event.results[i][0].transcript;
-              } else {
-                interimTranscript += event.results[i][0].transcript;
               }
             }
           };
-          
+
+          recognitionRef.current.onerror = (event) => {
+            console.log('Speech recognition error:', event.error);
+            // Don't treat no-speech as an error - user just didn't say anything yet
+            if (event.error === 'no-speech') {
+              // Restart recognition to keep listening
+              try {
+                recognitionRef.current?.start();
+              } catch (e) {
+                // Already running, ignore
+              }
+            } else if (event.error === 'aborted') {
+              // Recognition was aborted, likely by user - do nothing
+            } else if (event.error === 'not-allowed') {
+              showToast('Microphone access denied. Please enable in browser settings.');
+              setIsRecording(false);
+            }
+          };
+
           recognitionRef.current.onend = () => {
+            // Only process if this was a manual stop (user clicked Stop)
+            if (!manualStop) {
+              // Recognition ended unexpectedly, try to restart if still recording
+              return;
+            }
+
             const interruptedIndex = interruptedSentenceRef.current;
             const shouldResume = wasPlayingRef.current;
 
@@ -1323,6 +1345,7 @@
               });
             }
             finalTranscript = '';
+            manualStop = false;
             setIsRecording(false);
             wasPlayingRef.current = false;
 
@@ -1333,6 +1356,9 @@
               }, 300);
             }
           };
+
+          // Expose manualStop setter for toggleRecording
+          recognitionRef.current.setManualStop = (value) => { manualStop = value; };
         }
       }, [currentSource, currentSentenceIndex]);
 
@@ -1595,6 +1621,8 @@
 
       const toggleRecording = () => {
         if (isRecording) {
+          // Signal that this is a manual stop so onend processes the transcript
+          recognitionRef.current?.setManualStop?.(true);
           recognitionRef.current?.stop();
         } else {
           // Store state before stopping playback
@@ -1767,9 +1795,10 @@
           recognitionRef.current = new SpeechRecognition();
           recognitionRef.current.continuous = true;
           recognitionRef.current.interimResults = true;
-          
+
           let finalTranscript = '';
-          
+          let manualStop = false;
+
           recognitionRef.current.onresult = (event) => {
             for (let i = event.resultIndex; i < event.results.length; i++) {
               if (event.results[i].isFinal) {
@@ -1777,8 +1806,29 @@
               }
             }
           };
-          
+
+          recognitionRef.current.onerror = (event) => {
+            console.log('Speech recognition error:', event.error);
+            if (event.error === 'no-speech') {
+              // Restart recognition to keep listening
+              try {
+                recognitionRef.current?.start();
+              } catch (e) {
+                // Already running, ignore
+              }
+            } else if (event.error === 'aborted') {
+              // Recognition was aborted - do nothing
+            } else if (event.error === 'not-allowed') {
+              showToast('Microphone access denied. Please enable in browser settings.');
+              setIsRecording(false);
+            }
+          };
+
           recognitionRef.current.onend = () => {
+            if (!manualStop) {
+              return;
+            }
+
             if (finalTranscript.trim()) {
               addNote({
                 sourceId: currentSource?.id,
@@ -1788,8 +1838,11 @@
               });
             }
             finalTranscript = '';
+            manualStop = false;
             setIsRecording(false);
           };
+
+          recognitionRef.current.setManualStop = (value) => { manualStop = value; };
         }
       }, [currentSource, currentTime]);
 
@@ -1870,8 +1923,9 @@
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
         }
-        
+
         if (isRecording) {
+          recognitionRef.current?.setManualStop?.(true);
           recognitionRef.current?.stop();
         } else {
           recognitionRef.current?.start();
