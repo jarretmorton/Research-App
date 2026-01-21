@@ -1342,7 +1342,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.0</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.1</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1925,6 +1925,8 @@
         speakFromIndexRef.current = speakFromIndex;
       }, [speakFromIndex]);
 
+      const streamRef = useRef(null);
+
       const toggleRecording = async () => {
         if (isRecording) {
           // Stop recording
@@ -1939,21 +1941,19 @@
             return;
           }
 
-          // Store state before stopping playback
+          // Store state before stopping playback (use local vars, not refs)
+          const wasPlaying = isPlaying;
+          const notePosition = currentSentenceIndex;
+
           if (isPlaying) {
-            wasPlayingRef.current = true;
-            interruptedSentenceRef.current = currentSentenceIndex;
             wasCancelledRef.current = true;
             window.speechSynthesis.cancel();
             setIsPlaying(false);
-          } else {
-            wasPlayingRef.current = false;
-            interruptedSentenceRef.current = currentSentenceIndex;
           }
 
           try {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioChunksRef.current = [];
+            streamRef.current = stream;
 
             const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
             const mediaRecorder = mimeType
@@ -1961,56 +1961,77 @@
               : new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
 
+            // Use local array to avoid ref timing issues
+            const audioChunks = [];
+
             mediaRecorder.ondataavailable = (event) => {
               if (event.data.size > 0) {
-                audioChunksRef.current.push(event.data);
+                audioChunks.push(event.data);
               }
+            };
+
+            mediaRecorder.onerror = (event) => {
+              console.error('MediaRecorder error:', event.error);
+              showToast('Recording error. Try again.');
+              stream.getTracks().forEach(track => track.stop());
+              setIsRecording(false);
             };
 
             mediaRecorder.onstop = async () => {
               // Stop all tracks
               stream.getTracks().forEach(track => track.stop());
+              streamRef.current = null;
 
-              const interruptedIndex = interruptedSentenceRef.current;
-              const shouldResume = wasPlayingRef.current;
-
-              if (audioChunksRef.current.length > 0) {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                setIsTranscribing(true);
-                showToast('Transcribing...');
-
-                try {
-                  const transcript = await window.WhisperASR.transcribe(audioBlob);
-                  if (transcript && transcript.trim()) {
-                    const sentence = sentencesRef.current[interruptedIndex];
-                    addNote({
-                      sourceId: currentSource?.id,
-                      text: transcript.trim(),
-                      position: interruptedIndex,
-                      context: sentence?.substring(0, 100) + '...',
-                      type: 'voice'
-                    });
-                  } else {
-                    showToast('No speech detected - try speaking louder');
-                  }
-                } catch (error) {
-                  console.error('Transcription failed:', error);
-                  showToast('Transcription failed. Try again.');
+              if (audioChunks.length === 0) {
+                showToast('No audio captured. Try again.');
+                if (wasPlaying && speakFromIndexRef.current) {
+                  setTimeout(() => speakFromIndexRef.current(notePosition), 300);
                 }
-                setIsTranscribing(false);
+                return;
               }
 
-              wasPlayingRef.current = false;
+              const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+
+              if (audioBlob.size < 1000) {
+                showToast('Recording too short. Try again.');
+                if (wasPlaying && speakFromIndexRef.current) {
+                  setTimeout(() => speakFromIndexRef.current(notePosition), 300);
+                }
+                return;
+              }
+
+              setIsTranscribing(true);
+              showToast('Transcribing...');
+
+              try {
+                const transcript = await window.WhisperASR.transcribe(audioBlob);
+                if (transcript && transcript.trim()) {
+                  const sentence = sentencesRef.current[notePosition];
+                  addNote({
+                    sourceId: currentSource?.id,
+                    text: transcript.trim(),
+                    position: notePosition,
+                    context: sentence?.substring(0, 100) + '...',
+                    type: 'voice'
+                  });
+                  showToast('Note saved!');
+                } else {
+                  showToast('No speech detected - try speaking louder');
+                }
+              } catch (error) {
+                console.error('Transcription failed:', error);
+                showToast('Transcription failed. Try again.');
+              }
+              setIsTranscribing(false);
 
               // Resume playback if it was playing before
-              if (shouldResume && speakFromIndexRef.current) {
-                setTimeout(() => {
-                  speakFromIndexRef.current(interruptedIndex);
-                }, 300);
+              if (wasPlaying && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(notePosition), 300);
               }
             };
 
-            mediaRecorder.start();
+            // Start with timeslice for more reliable data capture
+            mediaRecorder.start(100);
             setIsRecording(true);
             showToast('Recording... speak now');
           } catch (error) {
