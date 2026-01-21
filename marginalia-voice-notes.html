@@ -141,7 +141,7 @@
     /* Main Content */
     .main-content {
       display: grid;
-      grid-template-columns: 1fr 360px;
+      grid-template-columns: 1fr;
       gap: 0;
       flex: 1;
       min-height: 0;
@@ -150,7 +150,6 @@
 
     .content-area {
       padding: 1rem 2rem;
-      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
       min-height: 0;
@@ -158,10 +157,23 @@
     }
 
     .sidebar {
+      position: fixed;
+      right: -360px;
+      top: 60px;
+      height: calc(100% - 60px);
+      height: calc(100dvh - 60px);
+      width: 360px;
       padding: 1rem;
       background: var(--bg-secondary);
       overflow-y: auto;
       min-height: 0;
+      transition: right 0.3s ease;
+      box-shadow: -4px 0 20px var(--shadow);
+      z-index: 50;
+    }
+
+    .sidebar.open {
+      right: 0;
     }
 
     /* Input Section */
@@ -916,31 +928,6 @@
     }
 
     /* Responsive */
-    @media (max-width: 1024px) {
-      .main-content {
-        grid-template-columns: 1fr;
-      }
-
-      .sidebar {
-        position: fixed;
-        right: -400px;
-        top: 60px;
-        height: calc(100% - 60px);
-        height: calc(100dvh - 60px);
-        width: 360px;
-        transition: right 0.3s ease;
-        box-shadow: -4px 0 20px var(--shadow);
-      }
-
-      .sidebar.open {
-        right: 0;
-      }
-
-      .content-area {
-        border-right: none;
-      }
-    }
-
     @media (max-width: 640px) {
       .header {
         flex-direction: column;
@@ -1052,38 +1039,6 @@
         width: 48px;
         height: 48px;
         font-size: 1.25rem;
-      }
-    }
-
-    /* Sidebar Toggle Button */
-    .sidebar-toggle {
-      display: none;
-    }
-
-    @media (max-width: 1024px) {
-      .sidebar-toggle {
-        display: flex;
-        position: relative;
-      }
-
-      .sidebar-toggle::after {
-        content: attr(data-count);
-        position: absolute;
-        top: -4px;
-        right: -4px;
-        background: var(--accent);
-        color: white;
-        font-size: 0.625rem;
-        min-width: 16px;
-        height: 16px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .sidebar-toggle[data-count="0"]::after {
-        display: none;
       }
     }
 
@@ -1216,37 +1171,53 @@
             <div className="logo">
               <div className="logo-icon">M</div>
               <div>
-                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.1</span></div>
+                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
             <nav className="nav-tabs">
-              <button 
+              <button
                 className={`nav-tab ${activeTab === 'reader' ? 'active' : ''}`}
                 onClick={() => setActiveTab('reader')}
               >
                 <Icons.Book /> Reader
               </button>
-              <button 
+              <button
                 className={`nav-tab ${activeTab === 'media' ? 'active' : ''}`}
                 onClick={() => setActiveTab('media')}
               >
                 <Icons.Headphones /> Media
               </button>
-              <button 
+              <button
                 className={`nav-tab ${activeTab === 'library' ? 'active' : ''}`}
                 onClick={() => setActiveTab('library')}
               >
                 <Icons.Library /> Library
               </button>
+              <button
+                className={`nav-tab ${sidebarOpen ? 'active' : ''}`}
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                style={{ position: 'relative' }}
+              >
+                <Icons.StickyNote /> Notes
+                {currentNotes.length > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '2px',
+                    right: '2px',
+                    background: 'var(--accent)',
+                    color: 'white',
+                    fontSize: '0.6rem',
+                    minWidth: '14px',
+                    height: '14px',
+                    borderRadius: '7px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>{currentNotes.length}</span>
+                )}
+              </button>
             </nav>
-            <button
-              className="btn btn-secondary btn-icon sidebar-toggle"
-              data-count={currentNotes.length}
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
-              <Icons.StickyNote />
-            </button>
           </header>
 
           <main className="main-content">
