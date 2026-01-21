@@ -1342,7 +1342,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.9</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.0</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1594,10 +1594,17 @@
         }
       }, [currentSentenceIndex, currentSource?.id, content]);
 
+      // Track isPlaying in a ref for event handlers
+      const isPlayingRef = useRef(false);
+      useEffect(() => {
+        isPlayingRef.current = isPlaying;
+      }, [isPlaying]);
+
       // Pause and save when page becomes hidden (browser tab switch or app close)
       useEffect(() => {
         const handleVisibilityChange = () => {
-          if (document.hidden && isPlaying) {
+          if (document.hidden && isPlayingRef.current) {
+            wasCancelledRef.current = true;
             window.speechSynthesis.cancel();
             setIsPlaying(false);
             showToast('Playback paused - position saved');
@@ -1605,8 +1612,7 @@
         };
 
         const handleBeforeUnload = () => {
-          // Position is already saved via the other useEffect
-          if (isPlaying) {
+          if (isPlayingRef.current) {
             window.speechSynthesis.cancel();
           }
         };
@@ -1617,12 +1623,8 @@
         return () => {
           document.removeEventListener('visibilitychange', handleVisibilityChange);
           window.removeEventListener('beforeunload', handleBeforeUnload);
-          // Save position when component unmounts (tab switch within app)
-          if (isPlaying) {
-            window.speechSynthesis.cancel();
-          }
         };
-      }, [isPlaying, showToast]);
+      }, [showToast]);
 
       const splitIntoSentences = (text) => {
         return text.match(/[^.!?]+[.!?]+/g) || [text];
