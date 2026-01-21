@@ -1171,7 +1171,7 @@
             <div className="logo">
               <div className="logo-icon">M</div>
               <div>
-                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.2</span></div>
+                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.3</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1283,6 +1283,8 @@
       const [speed, setSpeed] = useState(1);
       const [manualContent, setManualContent] = useState('');
       const [showManualInput, setShowManualInput] = useState(false);
+      const [showTextNote, setShowTextNote] = useState(false);
+      const [textNote, setTextNote] = useState('');
       
       const utteranceRef = useRef(null);
       const recognitionRef = useRef(null);
@@ -1715,6 +1717,21 @@
         }
       };
 
+      const saveTextNote = () => {
+        if (textNote.trim()) {
+          const sentence = sentencesRef.current[currentSentenceIndex];
+          addNote({
+            sourceId: currentSource?.id,
+            text: textNote.trim(),
+            position: currentSentenceIndex,
+            context: sentence?.substring(0, 100) + '...',
+            type: 'text'
+          });
+          setTextNote('');
+          setShowTextNote(false);
+        }
+      };
+
       const progress = content ? (currentSentenceIndex / content.sentences.length) * 100 : 0;
       const notedSentences = new Set(notes.map(n => n.position));
 
@@ -1783,11 +1800,27 @@
                 </div>
               </div>
               
+              {showTextNote && (
+                <div style={{ padding: '0.75rem 1.5rem', background: 'var(--note-bg)', borderTop: '1px solid var(--note-border)', display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    type="text"
+                    className="url-input"
+                    style={{ flex: 1 }}
+                    placeholder="Type your note..."
+                    value={textNote}
+                    onChange={(e) => setTextNote(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && saveTextNote()}
+                    autoFocus
+                  />
+                  <button className="btn btn-primary" onClick={saveTextNote}>Save</button>
+                  <button className="btn btn-secondary" onClick={() => { setShowTextNote(false); setTextNote(''); }}>Cancel</button>
+                </div>
+              )}
               <div className="playback-bar">
                 <button className="play-btn" onClick={togglePlayback}>
                   {isPlaying ? <Icons.Pause /> : <Icons.Play />}
                 </button>
-                
+
                 <div className="progress-container">
                   <div className="progress-bar">
                     <div className="progress-fill" style={{ width: `${progress}%` }} />
@@ -1797,7 +1830,7 @@
                     <span>{Math.round(progress)}%</span>
                   </div>
                 </div>
-                
+
                 <div className="speed-control">
                   <label>Speed</label>
                   <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
@@ -1809,12 +1842,19 @@
                     <option value="2">2x</option>
                   </select>
                 </div>
-                
-                <button 
+
+                <button
                   className={`note-btn ${isRecording ? 'recording' : ''}`}
                   onClick={toggleRecording}
                 >
-                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Add Note</>}
+                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Voice</>}
+                </button>
+                <button
+                  className="note-btn"
+                  onClick={() => setShowTextNote(!showTextNote)}
+                  style={{ marginLeft: '0.25rem' }}
+                >
+                  <Icons.Edit /> Type
                 </button>
               </div>
             </div>
