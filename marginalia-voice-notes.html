@@ -1289,7 +1289,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.2</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.3</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1615,16 +1615,34 @@
           if (url.toLowerCase().endsWith('.pdf') || url.toLowerCase().includes('.pdf')) {
             try {
               pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              showToast('Loading PDF...');
 
-              // Try direct load first, then CORS proxy
-              let pdf;
+              // Fetch PDF as binary data
+              let pdfData;
               try {
-                pdf = await pdfjsLib.getDocument(url).promise;
+                // Try direct fetch first
+                const response = await fetch(url);
+                if (response.ok) {
+                  pdfData = await response.arrayBuffer();
+                } else {
+                  throw new Error('Direct fetch failed');
+                }
               } catch (corsError) {
+                console.log('Direct PDF fetch failed, trying proxy...');
                 // Try with CORS proxy
                 const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-                pdf = await pdfjsLib.getDocument(proxyUrl).promise;
+                const proxyResponse = await fetch(proxyUrl);
+                if (!proxyResponse.ok) {
+                  throw new Error('Proxy fetch failed');
+                }
+                pdfData = await proxyResponse.arrayBuffer();
               }
+
+              console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
+
+              // Load PDF from binary data
+              const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+              console.log('PDF parsed:', pdf.numPages, 'pages');
 
               let fullText = '';
               for (let i = 1; i <= pdf.numPages; i++) {
@@ -1632,6 +1650,13 @@
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map(item => item.str).join(' ');
                 fullText += pageText + ' ';
+              }
+
+              if (!fullText.trim()) {
+                showToast('PDF has no readable text. It may be scanned/image-based.');
+                setShowManualInput(true);
+                setLoading(false);
+                return;
               }
 
               const sentences = splitIntoSentences(fullText);
@@ -1650,6 +1675,7 @@
                 sentences: sentences,
                 url: url
               });
+              showToast('PDF loaded successfully!');
               setLoading(false);
               return;
             } catch (error) {
