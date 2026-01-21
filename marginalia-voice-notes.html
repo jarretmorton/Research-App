@@ -474,6 +474,31 @@
       align-items: center;
       gap: 1rem;
       flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .playback-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .note-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    @media (max-width: 700px) {
+      .note-controls {
+        width: 100%;
+        justify-content: center;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border);
+        margin-top: 0.25rem;
+      }
     }
 
     .play-btn {
@@ -1317,7 +1342,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.7</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.8</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2082,64 +2107,67 @@
                 </div>
               )}
               <div className="playback-bar">
-                <button
-                  className="skip-btn"
-                  onClick={skipBack}
-                  title="Restart sentence / Previous (double-tap)"
-                >
-                  <Icons.SkipBack />
-                </button>
-                <button className="play-btn" onClick={togglePlayback}>
-                  {isPlaying ? <Icons.Pause /> : <Icons.Play />}
-                </button>
-                <button
-                  className="skip-btn"
-                  onClick={skipForward}
-                  disabled={currentSentenceIndex === content.sentences.length - 1}
-                  title="Next sentence"
-                >
-                  <Icons.SkipForward />
-                </button>
+                <div className="playback-controls">
+                  <button
+                    className="skip-btn"
+                    onClick={skipBack}
+                    title="Restart sentence / Previous (double-tap)"
+                  >
+                    <Icons.SkipBack />
+                  </button>
+                  <button className="play-btn" onClick={togglePlayback}>
+                    {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                  </button>
+                  <button
+                    className="skip-btn"
+                    onClick={skipForward}
+                    disabled={currentSentenceIndex === content.sentences.length - 1}
+                    title="Next sentence"
+                  >
+                    <Icons.SkipForward />
+                  </button>
 
-                <div className="progress-container">
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
+                  <div className="progress-container">
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="progress-text">
+                      <span>Sentence {currentSentenceIndex + 1} of {content.sentences.length}</span>
+                      <span>{Math.round(progress)}%</span>
+                    </div>
                   </div>
-                  <div className="progress-text">
-                    <span>Sentence {currentSentenceIndex + 1} of {content.sentences.length}</span>
-                    <span>{Math.round(progress)}%</span>
+
+                  <div className="speed-control">
+                    <label>Speed</label>
+                    <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
+                      <option value="0.5">0.5x</option>
+                      <option value="0.75">0.75x</option>
+                      <option value="1">1x</option>
+                      <option value="1.25">1.25x</option>
+                      <option value="1.5">1.5x</option>
+                      <option value="2">2x</option>
+                    </select>
                   </div>
                 </div>
 
-                <div className="speed-control">
-                  <label>Speed</label>
-                  <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
-                    <option value="0.5">0.5x</option>
-                    <option value="0.75">0.75x</option>
-                    <option value="1">1x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
-                  </select>
+                <div className="note-controls">
+                  <button
+                    className={`note-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
+                    onClick={toggleRecording}
+                    disabled={isTranscribing || whisperLoading}
+                  >
+                    {whisperLoading ? `Loading ${whisperProgress}%` :
+                     isTranscribing ? 'Processing...' :
+                     isRecording ? <><Icons.MicOff /> Stop</> :
+                     <><Icons.Mic /> Voice</>}
+                  </button>
+                  <button
+                    className="note-btn"
+                    onClick={() => setShowTextNote(!showTextNote)}
+                  >
+                    <Icons.Edit /> Type
+                  </button>
                 </div>
-
-                <button
-                  className={`note-btn ${isRecording ? 'recording' : ''} ${isTranscribing ? 'transcribing' : ''}`}
-                  onClick={toggleRecording}
-                  disabled={isTranscribing || whisperLoading}
-                >
-                  {whisperLoading ? `Loading ${whisperProgress}%` :
-                   isTranscribing ? 'Processing...' :
-                   isRecording ? <><Icons.MicOff /> Stop</> :
-                   <><Icons.Mic /> Voice</>}
-                </button>
-                <button
-                  className="note-btn"
-                  onClick={() => setShowTextNote(!showTextNote)}
-                  style={{ marginLeft: '0.25rem' }}
-                >
-                  <Icons.Edit /> Type
-                </button>
               </div>
             </div>
           ) : (
@@ -2436,42 +2464,46 @@
               </div>
               
               <div className="playback-bar">
-                <button
-                  className="skip-btn"
-                  onClick={() => skipTime(-15)}
-                  title="Back 15 seconds"
-                >
-                  <Icons.Rewind />
-                  <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
-                </button>
-                <button className="play-btn" onClick={togglePlayback}>
-                  {isPlaying ? <Icons.Pause /> : <Icons.Play />}
-                </button>
-                <button
-                  className="skip-btn"
-                  onClick={() => skipTime(15)}
-                  title="Forward 15 seconds"
-                >
-                  <span style={{ fontSize: '0.65rem', marginRight: '2px' }}>15</span>
-                  <Icons.FastForward />
-                </button>
+                <div className="playback-controls">
+                  <button
+                    className="skip-btn"
+                    onClick={() => skipTime(-15)}
+                    title="Back 15 seconds"
+                  >
+                    <Icons.Rewind />
+                    <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
+                  </button>
+                  <button className="play-btn" onClick={togglePlayback}>
+                    {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                  </button>
+                  <button
+                    className="skip-btn"
+                    onClick={() => skipTime(15)}
+                    title="Forward 15 seconds"
+                  >
+                    <span style={{ fontSize: '0.65rem', marginRight: '2px' }}>15</span>
+                    <Icons.FastForward />
+                  </button>
 
-                <div className="progress-container">
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${progress}%` }} />
-                  </div>
-                  <div className="progress-text">
-                    <span>{formatTime(currentTime)}</span>
-                    <span>{formatTime(duration)}</span>
+                  <div className="progress-container">
+                    <div className="progress-bar">
+                      <div className="progress-fill" style={{ width: `${progress}%` }} />
+                    </div>
+                    <div className="progress-text">
+                      <span>{formatTime(currentTime)}</span>
+                      <span>{formatTime(duration)}</span>
+                    </div>
                   </div>
                 </div>
 
-                <button
-                  className={`note-btn ${isRecording ? 'recording' : ''}`}
-                  onClick={toggleRecording}
-                >
-                  {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Add Note</>}
-                </button>
+                <div className="note-controls">
+                  <button
+                    className={`note-btn ${isRecording ? 'recording' : ''}`}
+                    onClick={toggleRecording}
+                  >
+                    {isRecording ? <><Icons.MicOff /> Stop</> : <><Icons.Mic /> Voice</>}
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
