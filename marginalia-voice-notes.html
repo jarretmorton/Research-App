@@ -70,14 +70,29 @@
         }
 
         try {
-          console.log('Transcribing audio...', audioBlob.size, 'bytes');
+          console.log('Transcribing audio...', audioBlob.size, 'bytes, type:', audioBlob.type);
 
           // Decode audio blob to raw audio samples using Web Audio API
           const arrayBuffer = await audioBlob.arrayBuffer();
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          console.log('ArrayBuffer size:', arrayBuffer.byteLength);
 
-          // Get audio data as Float32Array (mono, 16kHz for Whisper)
+          // Try different sample rates - some browsers need native rate first
+          let audioContext;
+          let audioBuffer;
+
+          // First try without forcing sample rate (more compatible)
+          try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+            console.log('Decoded at native rate:', audioBuffer.sampleRate, 'Hz');
+          } catch (e) {
+            console.log('Native decode failed, trying 16kHz:', e.message);
+            if (audioContext) await audioContext.close().catch(() => {});
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+          }
+
+          // Get audio data as Float32Array (mono for Whisper)
           let audioData;
           if (audioBuffer.numberOfChannels > 1) {
             // Mix down to mono
@@ -91,14 +106,31 @@
             audioData = audioBuffer.getChannelData(0);
           }
 
-          console.log('Audio decoded:', audioData.length, 'samples at', audioBuffer.sampleRate, 'Hz');
+          // Resample to 16kHz if needed (Whisper requires 16kHz)
+          if (audioBuffer.sampleRate !== 16000) {
+            console.log('Resampling from', audioBuffer.sampleRate, 'to 16000 Hz');
+            const ratio = audioBuffer.sampleRate / 16000;
+            const newLength = Math.round(audioData.length / ratio);
+            const resampled = new Float32Array(newLength);
+            for (let i = 0; i < newLength; i++) {
+              const srcIndex = Math.floor(i * ratio);
+              resampled[i] = audioData[srcIndex];
+            }
+            audioData = resampled;
+          }
+
+          console.log('Audio ready:', audioData.length, 'samples at 16kHz');
+
+          if (audioData.length < 1600) { // Less than 0.1 seconds
+            throw new Error('Audio too short');
+          }
 
           const result = await whisperPipeline(audioData, {
             chunk_length_s: 30,
             stride_length_s: 5,
             language: 'english',
             task: 'transcribe',
-            sampling_rate: audioBuffer.sampleRate,
+            sampling_rate: 16000,
           });
           console.log('Transcription result:', result);
           await audioContext.close();
@@ -110,10 +142,20 @@
       },
 
       getSupportedMimeType() {
-        const types = ['audio/webm', 'audio/mp4', 'audio/ogg', 'audio/wav'];
+        // More comprehensive list including codecs for better mobile support
+        const types = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4',
+          'audio/ogg;codecs=opus',
+          'audio/ogg',
+          'audio/wav',
+          'audio/mpeg',
+          ''  // Empty string = browser default
+        ];
         for (const type of types) {
-          if (MediaRecorder.isTypeSupported(type)) {
-            console.log('Using audio format:', type);
+          if (type === '' || MediaRecorder.isTypeSupported(type)) {
+            console.log('Using audio format:', type || 'browser default');
             return type;
           }
         }
@@ -1342,7 +1384,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.1</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
