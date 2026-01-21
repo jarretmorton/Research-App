@@ -1343,7 +1343,7 @@
         }
       }, []);
 
-      // Load source content when currentSource changes
+      // Load source content and saved position when currentSource changes
       useEffect(() => {
         if (currentSource && currentSource.type === 'article' && currentSource.content) {
           setContent({
@@ -1352,8 +1352,56 @@
             url: currentSource.url
           });
           sentencesRef.current = currentSource.sentences || splitIntoSentences(currentSource.content);
+
+          // Load saved position for this source
+          const savedPositions = JSON.parse(localStorage.getItem('marginalia_positions') || '{}');
+          const savedPosition = savedPositions[currentSource.id];
+          if (savedPosition !== undefined && savedPosition < sentencesRef.current.length) {
+            setCurrentSentenceIndex(savedPosition);
+          } else {
+            setCurrentSentenceIndex(0);
+          }
         }
       }, [currentSource]);
+
+      // Save position whenever it changes
+      useEffect(() => {
+        if (currentSource?.id && content) {
+          const savedPositions = JSON.parse(localStorage.getItem('marginalia_positions') || '{}');
+          savedPositions[currentSource.id] = currentSentenceIndex;
+          localStorage.setItem('marginalia_positions', JSON.stringify(savedPositions));
+        }
+      }, [currentSentenceIndex, currentSource?.id, content]);
+
+      // Pause and save when page becomes hidden (browser tab switch or app close)
+      useEffect(() => {
+        const handleVisibilityChange = () => {
+          if (document.hidden && isPlaying) {
+            window.speechSynthesis.cancel();
+            setIsPlaying(false);
+            showToast('Playback paused - position saved');
+          }
+        };
+
+        const handleBeforeUnload = () => {
+          // Position is already saved via the other useEffect
+          if (isPlaying) {
+            window.speechSynthesis.cancel();
+          }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        return () => {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          window.removeEventListener('beforeunload', handleBeforeUnload);
+          // Save position when component unmounts (tab switch within app)
+          if (isPlaying) {
+            window.speechSynthesis.cancel();
+          }
+        };
+      }, [isPlaying, showToast]);
 
       const splitIntoSentences = (text) => {
         return text.match(/[^.!?]+[.!?]+/g) || [text];
@@ -1861,6 +1909,34 @@
           };
         }
       }, []);
+
+      // Save position whenever it changes
+      useEffect(() => {
+        if (currentSource?.id && videoId && currentTime > 0) {
+          const savedPositions = JSON.parse(localStorage.getItem('marginalia_media_positions') || '{}');
+          savedPositions[currentSource.id] = currentTime;
+          localStorage.setItem('marginalia_media_positions', JSON.stringify(savedPositions));
+        }
+      }, [currentTime, currentSource?.id, videoId]);
+
+      // Pause and save when page becomes hidden
+      useEffect(() => {
+        const handleVisibilityChange = () => {
+          if (document.hidden && isPlaying && playerRef.current) {
+            playerRef.current.pauseVideo();
+            showToast('Playback paused - position saved');
+          }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          if (isPlaying && playerRef.current) {
+            playerRef.current.pauseVideo();
+          }
+        };
+      }, [isPlaying, showToast]);
 
       const extractVideoId = (url) => {
         const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
