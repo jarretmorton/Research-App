@@ -1055,6 +1055,38 @@
       }
     }
 
+    /* Sidebar Toggle Button */
+    .sidebar-toggle {
+      display: none;
+    }
+
+    @media (max-width: 1024px) {
+      .sidebar-toggle {
+        display: flex;
+        position: relative;
+      }
+
+      .sidebar-toggle::after {
+        content: attr(data-count);
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        background: var(--accent);
+        color: white;
+        font-size: 0.625rem;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .sidebar-toggle[data-count="0"]::after {
+        display: none;
+      }
+    }
+
     /* Scrollbar Styling */
     ::-webkit-scrollbar {
       width: 8px;
@@ -1184,7 +1216,7 @@
             <div className="logo">
               <div className="logo-icon">M</div>
               <div>
-                <div className="logo-text">Marginalia</div>
+                <div className="logo-text">Marginalia <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.0.1</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1208,12 +1240,12 @@
                 <Icons.Library /> Library
               </button>
             </nav>
-            <button 
-              className="btn btn-secondary btn-icon"
-              style={{ display: 'none' }}
+            <button
+              className="btn btn-secondary btn-icon sidebar-toggle"
+              data-count={currentNotes.length}
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
-              <Icons.Menu />
+              <Icons.StickyNote />
             </button>
           </header>
 
@@ -1254,11 +1286,12 @@
             </div>
 
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-              <NoteSidebar 
-                notes={currentNotes} 
+              <NoteSidebar
+                notes={currentNotes}
                 currentSource={currentSource}
                 deleteNote={deleteNote}
                 showToast={showToast}
+                onClose={() => setSidebarOpen(false)}
               />
             </aside>
           </main>
@@ -1673,6 +1706,8 @@
               context: sentence?.substring(0, 100) + '...',
               type: 'voice'
             });
+          } else {
+            showToast('No speech detected - try speaking louder');
           }
           transcriptRef.current = '';
           wasPlayingRef.current = false;
@@ -2256,7 +2291,7 @@
     }
 
     // Note Sidebar Component
-    function NoteSidebar({ notes, currentSource, deleteNote, showToast }) {
+    function NoteSidebar({ notes, currentSource, deleteNote, showToast, onClose }) {
       const copyNote = (note) => {
         const position = note.timestamp !== undefined 
           ? `[${formatTime(note.timestamp)}]` 
@@ -2284,8 +2319,17 @@
 
       return (
         <div>
-          <div className="sidebar-title">
-            <Icons.StickyNote /> Notes ({notes.length})
+          <div className="sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span><Icons.StickyNote /> Notes ({notes.length})</span>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="btn btn-secondary btn-icon"
+                style={{ width: '32px', height: '32px', padding: 0 }}
+              >
+                <Icons.X />
+              </button>
+            )}
           </div>
           
           {notes.length === 0 ? (
