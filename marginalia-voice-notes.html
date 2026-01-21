@@ -1342,7 +1342,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.8</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.1.9</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1469,10 +1469,12 @@
       const interruptedSentenceRef = useRef(0);
       const speakFromIndexRef = useRef(null);
       const lastBackPressRef = useRef(0);
+      const wasCancelledRef = useRef(false);
 
       // Skip to next sentence (stops current and plays next)
       const skipForward = () => {
         if (currentSentenceIndex < sentencesRef.current.length - 1) {
+          wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           const nextIndex = currentSentenceIndex + 1;
           setCurrentSentenceIndex(nextIndex);
@@ -1488,6 +1490,7 @@
         const timeSinceLastPress = now - lastBackPressRef.current;
         lastBackPressRef.current = now;
 
+        wasCancelledRef.current = true;
         window.speechSynthesis.cancel();
 
         // If pressed within 1.5 seconds, go to previous sentence
@@ -1876,6 +1879,7 @@
 
       const togglePlayback = () => {
         if (isPlaying) {
+          wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           setIsPlaying(false);
         } else {
@@ -1889,12 +1893,18 @@
           return;
         }
 
+        wasCancelledRef.current = false;
         setIsPlaying(true);
         setCurrentSentenceIndex(index);
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
 
         utterance.onend = () => {
+          // Don't continue if speech was intentionally cancelled
+          if (wasCancelledRef.current) {
+            wasCancelledRef.current = false;
+            return;
+          }
           const nextIndex = index + 1;
           setCurrentSentenceIndex(nextIndex);
           if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
@@ -1931,6 +1941,7 @@
           if (isPlaying) {
             wasPlayingRef.current = true;
             interruptedSentenceRef.current = currentSentenceIndex;
+            wasCancelledRef.current = true;
             window.speechSynthesis.cancel();
             setIsPlaying(false);
           } else {
