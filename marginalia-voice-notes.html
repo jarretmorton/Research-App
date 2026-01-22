@@ -1454,7 +1454,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.1</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2068,6 +2068,9 @@
       }, [speakFromIndex]);
 
       const streamRef = useRef(null);
+      const audioContextRef = useRef(null);
+      const analyzerRef = useRef(null);
+      const silenceTimeoutRef = useRef(null);
 
       const toggleRecording = async () => {
         if (isRecording) {
@@ -2076,6 +2079,16 @@
 
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
+          }
+
+          // Clean up audio context and timers
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
           }
 
           // Clean up stream if stopping didn't trigger onstop
@@ -2132,6 +2145,16 @@
             };
 
             mediaRecorder.onstop = async () => {
+              // Clean up audio context and timers
+              if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+              }
+              if (silenceTimeoutRef.current) {
+                clearTimeout(silenceTimeoutRef.current);
+                silenceTimeoutRef.current = null;
+              }
+
               // Stop all tracks
               stream.getTracks().forEach(track => track.stop());
               streamRef.current = null;
@@ -2188,6 +2211,74 @@
             mediaRecorder.start(100);
             setIsRecording(true);
             showToast('Recording... speak now');
+
+            // Set up voice activity detection for auto-stop
+            try {
+              const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              audioContextRef.current = audioContext;
+
+              const source = audioContext.createMediaStreamSource(stream);
+              const analyzer = audioContext.createAnalyser();
+              analyzer.fftSize = 2048;
+              analyzer.smoothingTimeConstant = 0.8;
+              source.connect(analyzer);
+              analyzerRef.current = analyzer;
+
+              const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+              let lastSoundTime = Date.now();
+              const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
+              const SILENCE_DURATION = 1500; // 1.5 seconds of silence before auto-stop
+
+              const checkAudioLevel = () => {
+                if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+                  return;
+                }
+
+                analyzer.getByteTimeDomainData(dataArray);
+
+                // Calculate average volume
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                  const amplitude = Math.abs(dataArray[i] - 128);
+                  sum += amplitude;
+                }
+                const average = sum / dataArray.length;
+
+                // If sound detected, reset silence timer
+                if (average > SILENCE_THRESHOLD) {
+                  lastSoundTime = Date.now();
+                  if (silenceTimeoutRef.current) {
+                    clearTimeout(silenceTimeoutRef.current);
+                    silenceTimeoutRef.current = null;
+                  }
+                } else {
+                  // Check if silence duration exceeded
+                  const silenceDuration = Date.now() - lastSoundTime;
+                  if (silenceDuration > SILENCE_DURATION && !silenceTimeoutRef.current) {
+                    // Auto-stop recording after silence
+                    console.log('Auto-stopping recording after silence');
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                      setIsRecording(false);
+                      mediaRecorderRef.current.stop();
+                    }
+                    if (audioContextRef.current) {
+                      audioContextRef.current.close();
+                      audioContextRef.current = null;
+                    }
+                    return; // Stop checking
+                  }
+                }
+
+                // Continue checking
+                requestAnimationFrame(checkAudioLevel);
+              };
+
+              // Start monitoring audio levels
+              checkAudioLevel();
+            } catch (err) {
+              console.log('Voice activity detection setup failed:', err);
+              // Continue recording without auto-stop if VAD fails
+            }
           } catch (error) {
             console.error('Failed to start recording:', error);
             showToast('Microphone access denied or unavailable');
@@ -2395,6 +2486,9 @@
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
       const wakeLockRef = useRef(null);
+      const audioContextRef = useRef(null);
+      const analyzerRef = useRef(null);
+      const silenceTimeoutRef = useRef(null);
 
       // Check if Whisper is ready
       useEffect(() => {
@@ -2569,6 +2663,16 @@
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
+
+          // Clean up audio context and timers
+          if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+          }
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
         } else {
           if (!whisperReady) {
             showToast('Speech recognition still loading. Please wait.');
@@ -2601,6 +2705,16 @@
             };
 
             mediaRecorder.onstop = async () => {
+              // Clean up audio context and timers
+              if (audioContextRef.current) {
+                audioContextRef.current.close();
+                audioContextRef.current = null;
+              }
+              if (silenceTimeoutRef.current) {
+                clearTimeout(silenceTimeoutRef.current);
+                silenceTimeoutRef.current = null;
+              }
+
               stream.getTracks().forEach(track => track.stop());
 
               if (audioChunksRef.current.length > 0) {
@@ -2640,6 +2754,74 @@
             mediaRecorder.start(100);
             setIsRecording(true);
             showToast('Recording... speak now');
+
+            // Set up voice activity detection for auto-stop
+            try {
+              const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              audioContextRef.current = audioContext;
+
+              const source = audioContext.createMediaStreamSource(stream);
+              const analyzer = audioContext.createAnalyser();
+              analyzer.fftSize = 2048;
+              analyzer.smoothingTimeConstant = 0.8;
+              source.connect(analyzer);
+              analyzerRef.current = analyzer;
+
+              const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+              let lastSoundTime = Date.now();
+              const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
+              const SILENCE_DURATION = 1500; // 1.5 seconds of silence before auto-stop
+
+              const checkAudioLevel = () => {
+                if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+                  return;
+                }
+
+                analyzer.getByteTimeDomainData(dataArray);
+
+                // Calculate average volume
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) {
+                  const amplitude = Math.abs(dataArray[i] - 128);
+                  sum += amplitude;
+                }
+                const average = sum / dataArray.length;
+
+                // If sound detected, reset silence timer
+                if (average > SILENCE_THRESHOLD) {
+                  lastSoundTime = Date.now();
+                  if (silenceTimeoutRef.current) {
+                    clearTimeout(silenceTimeoutRef.current);
+                    silenceTimeoutRef.current = null;
+                  }
+                } else {
+                  // Check if silence duration exceeded
+                  const silenceDuration = Date.now() - lastSoundTime;
+                  if (silenceDuration > SILENCE_DURATION && !silenceTimeoutRef.current) {
+                    // Auto-stop recording after silence
+                    console.log('Auto-stopping recording after silence');
+                    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                      setIsRecording(false);
+                      mediaRecorderRef.current.stop();
+                    }
+                    if (audioContextRef.current) {
+                      audioContextRef.current.close();
+                      audioContextRef.current = null;
+                    }
+                    return; // Stop checking
+                  }
+                }
+
+                // Continue checking
+                requestAnimationFrame(checkAudioLevel);
+              };
+
+              // Start monitoring audio levels
+              checkAudioLevel();
+            } catch (err) {
+              console.log('Voice activity detection setup failed:', err);
+              // Continue recording without auto-stop if VAD fails
+            }
           } catch (error) {
             console.error('Failed to start recording:', error);
             showToast('Microphone access denied or unavailable');
