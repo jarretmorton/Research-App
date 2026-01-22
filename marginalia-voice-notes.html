@@ -1454,7 +1454,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.3</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.4</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2227,6 +2227,7 @@
               const dataArray = new Uint8Array(analyzer.frequencyBinCount);
               const recordingStartTime = Date.now();
               let lastSoundTime = Date.now();
+              let gracePeriodEnded = false;
               const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
               const SILENCE_DURATION = 2500; // 2.5 seconds of silence before auto-stop
               const GRACE_PERIOD = 2000; // 2 seconds grace period before checking for silence
@@ -2236,11 +2237,13 @@
                   return;
                 }
 
-                // Don't check for silence during grace period (gives user time to start speaking)
                 const elapsed = Date.now() - recordingStartTime;
-                if (elapsed < GRACE_PERIOD) {
-                  requestAnimationFrame(checkAudioLevel);
-                  return;
+                const inGracePeriod = elapsed < GRACE_PERIOD;
+
+                // Reset lastSoundTime when grace period ends (only once)
+                if (!inGracePeriod && !gracePeriodEnded) {
+                  lastSoundTime = Date.now();
+                  gracePeriodEnded = true;
                 }
 
                 analyzer.getByteTimeDomainData(dataArray);
@@ -2260,8 +2263,8 @@
                     clearTimeout(silenceTimeoutRef.current);
                     silenceTimeoutRef.current = null;
                   }
-                } else {
-                  // Check if silence duration exceeded
+                } else if (!inGracePeriod) {
+                  // Only check for auto-stop AFTER grace period
                   const silenceDuration = Date.now() - lastSoundTime;
                   if (silenceDuration > SILENCE_DURATION && !silenceTimeoutRef.current) {
                     // Auto-stop recording after silence
@@ -2779,6 +2782,7 @@
               const dataArray = new Uint8Array(analyzer.frequencyBinCount);
               const recordingStartTime = Date.now();
               let lastSoundTime = Date.now();
+              let gracePeriodEnded = false;
               const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
               const SILENCE_DURATION = 2500; // 2.5 seconds of silence before auto-stop
               const GRACE_PERIOD = 2000; // 2 seconds grace period before checking for silence
@@ -2788,11 +2792,13 @@
                   return;
                 }
 
-                // Don't check for silence during grace period (gives user time to start speaking)
                 const elapsed = Date.now() - recordingStartTime;
-                if (elapsed < GRACE_PERIOD) {
-                  requestAnimationFrame(checkAudioLevel);
-                  return;
+                const inGracePeriod = elapsed < GRACE_PERIOD;
+
+                // Reset lastSoundTime when grace period ends (only once)
+                if (!inGracePeriod && !gracePeriodEnded) {
+                  lastSoundTime = Date.now();
+                  gracePeriodEnded = true;
                 }
 
                 analyzer.getByteTimeDomainData(dataArray);
@@ -2812,8 +2818,8 @@
                     clearTimeout(silenceTimeoutRef.current);
                     silenceTimeoutRef.current = null;
                   }
-                } else {
-                  // Check if silence duration exceeded
+                } else if (!inGracePeriod) {
+                  // Only check for auto-stop AFTER grace period
                   const silenceDuration = Date.now() - lastSoundTime;
                   if (silenceDuration > SILENCE_DURATION && !silenceTimeoutRef.current) {
                     // Auto-stop recording after silence
