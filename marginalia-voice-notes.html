@@ -1916,20 +1916,55 @@
             }
           }
 
-          // For web articles, use CORS proxy
+          // For web articles, try multiple CORS proxies
           showToast('Fetching article content...');
-          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-          const response = await fetch(proxyUrl);
 
-          if (!response.ok) {
-            throw new Error('Failed to fetch article');
+          const corsProxies = [
+            {
+              name: 'allorigins',
+              url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+              extract: (data) => data.contents
+            },
+            {
+              name: 'corsproxy.io',
+              url: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+              extract: (data) => data
+            },
+            {
+              name: 'codetabs',
+              url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+              extract: (data) => data
+            }
+          ];
+
+          let html = null;
+          let lastError = null;
+
+          for (const proxy of corsProxies) {
+            try {
+              console.log(`Trying ${proxy.name} proxy...`);
+              const proxyUrl = proxy.url(url);
+              const response = await fetch(proxyUrl);
+
+              if (!response.ok) {
+                throw new Error(`${proxy.name} returned ${response.status}`);
+              }
+
+              const data = await (proxy.name === 'allorigins' ? response.json() : response.text());
+              html = proxy.extract(data);
+
+              if (html && html.length > 100) {
+                console.log(`${proxy.name} succeeded`);
+                break;
+              }
+            } catch (error) {
+              console.log(`${proxy.name} failed:`, error.message);
+              lastError = error;
+            }
           }
 
-          const data = await response.json();
-          const html = data.contents;
-
           if (!html) {
-            throw new Error('No content received');
+            throw lastError || new Error('All proxies failed');
           }
 
           const { title, text } = extractArticleContent(html);
