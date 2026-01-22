@@ -1454,7 +1454,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.2.9</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.0</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2047,10 +2047,22 @@
           if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
+
+          // Clean up stream if stopping didn't trigger onstop
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+          }
         } else {
           if (!whisperReady) {
             showToast('Speech recognition still loading. Please wait or use text notes.');
             return;
+          }
+
+          // Clean up any existing stream before starting new recording
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
           }
 
           // Store state before stopping playback (use local vars, not refs)
@@ -2524,11 +2536,24 @@
               }
             };
 
+            mediaRecorder.onerror = (event) => {
+              console.error('MediaRecorder error:', event.error);
+              showToast('Recording error. Try again.');
+              stream.getTracks().forEach(track => track.stop());
+              setIsRecording(false);
+            };
+
             mediaRecorder.onstop = async () => {
               stream.getTracks().forEach(track => track.stop());
 
               if (audioChunksRef.current.length > 0) {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+
+                if (audioBlob.size < 500) {
+                  showToast('Recording too short. Try again.');
+                  return;
+                }
+
                 setIsTranscribing(true);
                 showToast('Transcribing...');
 
@@ -2541,6 +2566,7 @@
                       timestamp: recordingTime,
                       type: 'voice'
                     });
+                    showToast('Note saved!');
                   } else {
                     showToast('No speech detected - try speaking louder');
                   }
@@ -2549,6 +2575,8 @@
                   showToast('Transcription failed. Try again.');
                 }
                 setIsTranscribing(false);
+              } else {
+                showToast('No audio captured. Try again.');
               }
             };
 
