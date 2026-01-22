@@ -1454,7 +1454,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.0</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.1</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1582,6 +1582,7 @@
       const speakFromIndexRef = useRef(null);
       const lastBackPressRef = useRef(0);
       const wasCancelledRef = useRef(false);
+      const wakeLockRef = useRef(null);
 
       // Skip to next sentence (stops current and plays next)
       const skipForward = () => {
@@ -1991,11 +1992,36 @@
         setManualContent('');
       };
 
+      // Wake Lock helpers to keep screen on during playback
+      const requestWakeLock = async () => {
+        try {
+          if ('wakeLock' in navigator && !wakeLockRef.current) {
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock activated');
+          }
+        } catch (err) {
+          console.log('Wake Lock not supported or failed:', err);
+        }
+      };
+
+      const releaseWakeLock = async () => {
+        try {
+          if (wakeLockRef.current) {
+            await wakeLockRef.current.release();
+            wakeLockRef.current = null;
+            console.log('Wake Lock released');
+          }
+        } catch (err) {
+          console.log('Wake Lock release failed:', err);
+        }
+      };
+
       const togglePlayback = () => {
         if (isPlaying) {
           wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           setIsPlaying(false);
+          releaseWakeLock();
         } else {
           speakFromIndex(currentSentenceIndex);
         }
@@ -2004,11 +2030,13 @@
       const speakFromIndex = useCallback((index) => {
         if (!content || index >= content.sentences.length) {
           setIsPlaying(false);
+          releaseWakeLock();
           return;
         }
 
         wasCancelledRef.current = false;
         setIsPlaying(true);
+        requestWakeLock(); // Keep screen on during playback
         setCurrentSentenceIndex(index);
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
@@ -2017,6 +2045,7 @@
           // Don't continue if speech was intentionally cancelled
           if (wasCancelledRef.current) {
             wasCancelledRef.current = false;
+            releaseWakeLock();
             return;
           }
           const nextIndex = index + 1;
@@ -2025,6 +2054,7 @@
             speakFromIndexRef.current(nextIndex);
           } else {
             setIsPlaying(false);
+            releaseWakeLock(); // Release when playback ends
           }
         };
 
@@ -2364,6 +2394,7 @@
       const mediaRecorderRef = useRef(null);
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
+      const wakeLockRef = useRef(null);
 
       // Check if Whisper is ready
       useEffect(() => {
@@ -2451,11 +2482,35 @@
         }, 100);
       };
 
+      // Wake Lock helpers to keep screen on during playback
+      const requestWakeLock = async () => {
+        try {
+          if ('wakeLock' in navigator && !wakeLockRef.current) {
+            wakeLockRef.current = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock activated');
+          }
+        } catch (err) {
+          console.log('Wake Lock not supported or failed:', err);
+        }
+      };
+
+      const releaseWakeLock = async () => {
+        try {
+          if (wakeLockRef.current) {
+            await wakeLockRef.current.release();
+            wakeLockRef.current = null;
+            console.log('Wake Lock released');
+          }
+        } catch (err) {
+          console.log('Wake Lock release failed:', err);
+        }
+      };
+
       const initPlayer = (id) => {
         if (playerRef.current && playerRef.current.destroy) {
           playerRef.current.destroy();
         }
-        
+
         playerRef.current = new window.YT.Player('youtube-player', {
           videoId: id,
           playerVars: {
@@ -2470,12 +2525,14 @@
             },
             onStateChange: (event) => {
               setIsPlaying(event.data === window.YT.PlayerState.PLAYING);
-              
+
               if (event.data === window.YT.PlayerState.PLAYING) {
+                requestWakeLock(); // Keep screen on while playing
                 intervalRef.current = setInterval(() => {
                   setCurrentTime(playerRef.current.getCurrentTime());
                 }, 500);
               } else {
+                releaseWakeLock(); // Release when paused/stopped
                 clearInterval(intervalRef.current);
               }
             }
