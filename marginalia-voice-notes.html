@@ -773,6 +773,25 @@
       margin-bottom: 0.375rem;
     }
 
+    .note-edit-input {
+      width: 100%;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      line-height: 1.4;
+      padding: 0.5rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg-primary);
+      font-family: inherit;
+      resize: vertical;
+      margin-bottom: 0.5rem;
+    }
+
+    .note-edit-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
     .note-context {
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -1437,6 +1456,13 @@
         showToast('Note deleted');
       };
 
+      const updateNote = (noteId, updatedText) => {
+        setNotes(prev => prev.map(n =>
+          n.id === noteId ? { ...n, text: updatedText } : n
+        ));
+        showToast('Note updated');
+      };
+
       const deleteSource = (sourceId) => {
         setSources(prev => prev.filter(s => s.id !== sourceId));
         setNotes(prev => prev.filter(n => n.sourceId !== sourceId));
@@ -1454,7 +1480,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.4</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.6</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1544,6 +1570,7 @@
                 notes={currentNotes}
                 currentSource={currentSource}
                 deleteNote={deleteNote}
+                updateNote={updateNote}
                 showToast={showToast}
                 onClose={() => setSidebarOpen(false)}
               />
@@ -3081,7 +3108,28 @@
     }
 
     // Note Sidebar Component
-    function NoteSidebar({ notes, currentSource, deleteNote, showToast, onClose }) {
+    function NoteSidebar({ notes, currentSource, deleteNote, updateNote, showToast, onClose }) {
+      const [editingNoteId, setEditingNoteId] = useState(null);
+      const [editText, setEditText] = useState('');
+
+      const startEdit = (note) => {
+        setEditingNoteId(note.id);
+        setEditText(note.text);
+      };
+
+      const cancelEdit = () => {
+        setEditingNoteId(null);
+        setEditText('');
+      };
+
+      const saveEdit = (noteId) => {
+        if (editText.trim()) {
+          updateNote(noteId, editText.trim());
+          setEditingNoteId(null);
+          setEditText('');
+        }
+      };
+
       const copyNote = (note) => {
         const position = note.timestamp !== undefined 
           ? `[${formatTime(note.timestamp)}]` 
@@ -3134,22 +3182,50 @@
               {notes.map(note => (
                 <div key={note.id} className="note-card">
                   <div className="note-position">
-                    {note.timestamp !== undefined 
+                    {note.timestamp !== undefined
                       ? formatTime(note.timestamp)
                       : `Sentence ${note.position + 1}`}
                   </div>
-                  <div className="note-text">{note.text}</div>
-                  {note.context && (
-                    <div className="note-context">"{note.context}"</div>
+
+                  {editingNoteId === note.id ? (
+                    // Edit mode
+                    <>
+                      <textarea
+                        className="note-edit-input"
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        autoFocus
+                        rows="4"
+                      />
+                      <div className="note-actions">
+                        <button className="note-action-btn" onClick={() => saveEdit(note.id)}>
+                          Save
+                        </button>
+                        <button className="note-action-btn" onClick={cancelEdit}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    // View mode
+                    <>
+                      <div className="note-text">{note.text}</div>
+                      {note.context && (
+                        <div className="note-context">"{note.context}"</div>
+                      )}
+                      <div className="note-actions">
+                        <button className="note-action-btn" onClick={() => startEdit(note)}>
+                          <Icons.Edit /> Edit
+                        </button>
+                        <button className="note-action-btn" onClick={() => copyNote(note)}>
+                          <Icons.Copy /> Copy
+                        </button>
+                        <button className="note-action-btn delete" onClick={() => deleteNote(note.id)}>
+                          <Icons.Trash /> Delete
+                        </button>
+                      </div>
+                    </>
                   )}
-                  <div className="note-actions">
-                    <button className="note-action-btn" onClick={() => copyNote(note)}>
-                      <Icons.Copy /> Copy
-                    </button>
-                    <button className="note-action-btn delete" onClick={() => deleteNote(note.id)}>
-                      <Icons.Trash /> Delete
-                    </button>
-                  </div>
                 </div>
               ))}
             </div>
