@@ -1469,6 +1469,9 @@
       const [toast, setToast] = useState({ show: false, message: '' });
       const [sidebarOpen, setSidebarOpen] = useState(false);
 
+      const readerRef = useRef(null);
+      const mediaRef = useRef(null);
+
       // Save to localStorage
       useEffect(() => {
         localStorage.setItem('marginalia_sources', JSON.stringify(sources));
@@ -1510,16 +1513,25 @@
       };
 
       const navigateToNote = (note) => {
+        setSidebarOpen(false);
+
         if (note.timestamp !== undefined) {
           // Video note - seek to timestamp
-          if (playerRef.current) {
-            playerRef.current.seekTo(note.timestamp, true);
-          }
+          setActiveTab('media');
+          setTimeout(() => {
+            if (mediaRef.current?.seekTo) {
+              mediaRef.current.seekTo(note.timestamp);
+            }
+          }, 100);
         } else if (note.position !== undefined) {
           // Article/PDF note - go to sentence
-          setCurrentSentenceIndex(note.position);
+          setActiveTab('reader');
+          setTimeout(() => {
+            if (readerRef.current?.navigateToSentence) {
+              readerRef.current.navigateToSentence(note.position);
+            }
+          }, 100);
         }
-        setSidebarOpen(false);
       };
 
       const deleteSource = (sourceId) => {
@@ -1591,7 +1603,8 @@
           <main className="main-content">
             <div className="content-area">
               {activeTab === 'reader' && (
-                <ReaderView 
+                <ReaderView
+                  ref={readerRef}
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
                   addSource={addSource}
@@ -1601,7 +1614,8 @@
                 />
               )}
               {activeTab === 'media' && (
-                <MediaView 
+                <MediaView
+                  ref={mediaRef}
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
                   addSource={addSource}
@@ -1643,7 +1657,7 @@
     }
 
     // Reader View Component
-    function ReaderView({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }) {
+    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }, ref) => {
       const [url, setUrl] = useState('');
       const [loading, setLoading] = useState(false);
       const [content, setContent] = useState(null);
@@ -1670,6 +1684,21 @@
       const lastBackPressRef = useRef(0);
       const wasCancelledRef = useRef(false);
       const wakeLockRef = useRef(null);
+      const sentenceRefs = useRef({});
+
+      // Expose navigation method to parent
+      useImperativeHandle(ref, () => ({
+        navigateToSentence: (index) => {
+          setCurrentSentenceIndex(index);
+          // Scroll to the sentence after a brief delay to ensure render
+          setTimeout(() => {
+            const sentenceElement = sentenceRefs.current[index];
+            if (sentenceElement) {
+              sentenceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 100);
+        }
+      }));
 
       // Skip to next sentence (stops current and plays next)
       const skipForward = () => {
@@ -2506,6 +2535,7 @@
                   {content.sentences.map((sentence, index) => (
                     <span
                       key={index}
+                      ref={(el) => sentenceRefs.current[index] = el}
                       className={`sentence ${index === currentSentenceIndex ? 'current' : ''} ${notedSentences.has(index) ? 'has-note' : ''}`}
                       onClick={() => setCurrentSentenceIndex(index)}
                     >
@@ -2608,10 +2638,10 @@
           )}
         </div>
       );
-    }
+    });
 
     // Media View Component
-    function MediaView({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }) {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }, ref) => {
       const [mediaType, setMediaType] = useState('youtube');
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
@@ -2631,6 +2661,15 @@
       const mediaRecorderRef = useRef(null);
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
+
+      // Expose seekTo method to parent
+      useImperativeHandle(ref, () => ({
+        seekTo: (timestamp) => {
+          if (playerRef.current) {
+            playerRef.current.seekTo(timestamp, true);
+          }
+        }
+      }));
       const wakeLockRef = useRef(null);
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
@@ -3103,7 +3142,7 @@
           )}
         </div>
       );
-    }
+    });
 
     // Library View Component
     function LibraryView({ sources, notes, setCurrentSource, deleteNote, deleteSource }) {
