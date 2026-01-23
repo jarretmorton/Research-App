@@ -298,6 +298,28 @@
       box-shadow: 0 2px 8px var(--shadow);
     }
 
+    .notes-button {
+      margin-left: auto;
+      border: 1px solid var(--border);
+      background: var(--bg-primary);
+    }
+
+    .notes-button:hover:not(:disabled) {
+      background: var(--bg-secondary);
+      border-color: var(--accent);
+    }
+
+    .notes-button.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .notes-button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
     /* Main Content */
     .main-content {
       display: grid;
@@ -1592,7 +1614,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.1</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1616,9 +1638,11 @@
                 <Icons.Library /> Library
               </button>
               <button
-                className={`nav-tab ${sidebarOpen ? 'active' : ''}`}
-                onClick={() => setSidebarOpen(!sidebarOpen)}
+                className={`nav-tab notes-button ${sidebarOpen ? 'active' : ''} ${!currentSource ? 'disabled' : ''}`}
+                onClick={() => currentSource && setSidebarOpen(!sidebarOpen)}
+                disabled={!currentSource}
                 style={{ position: 'relative' }}
+                title={!currentSource ? 'Load a source to view notes' : 'Toggle notes'}
               >
                 <Icons.StickyNote /> Notes
                 {currentNotes.length > 0 && (
