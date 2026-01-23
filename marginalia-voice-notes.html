@@ -765,6 +765,12 @@
       font-weight: 500;
       margin-bottom: 0.25rem;
       font-family: 'JetBrains Mono', monospace;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+    }
+
+    .note-position:hover {
+      opacity: 0.7;
     }
 
     .note-text {
@@ -1503,6 +1509,19 @@
         showToast('Note updated');
       };
 
+      const navigateToNote = (note) => {
+        if (note.timestamp !== undefined) {
+          // Video note - seek to timestamp
+          if (playerRef.current) {
+            playerRef.current.seekTo(note.timestamp, true);
+          }
+        } else if (note.position !== undefined) {
+          // Article/PDF note - go to sentence
+          setCurrentSentenceIndex(note.position);
+        }
+        setSidebarOpen(false);
+      };
+
       const deleteSource = (sourceId) => {
         setSources(prev => prev.filter(s => s.id !== sourceId));
         setNotes(prev => prev.filter(n => n.sourceId !== sourceId));
@@ -1520,7 +1539,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.7</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.8</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1611,6 +1630,7 @@
                 currentSource={currentSource}
                 deleteNote={deleteNote}
                 updateNote={updateNote}
+                navigateToNote={navigateToNote}
                 showToast={showToast}
                 onClose={() => setSidebarOpen(false)}
               />
@@ -3197,7 +3217,7 @@
     }
 
     // Note Sidebar Component
-    function NoteSidebar({ notes, currentSource, deleteNote, updateNote, showToast, onClose }) {
+    function NoteSidebar({ notes, currentSource, deleteNote, updateNote, navigateToNote, showToast, onClose }) {
       const [editingNoteId, setEditingNoteId] = useState(null);
       const [editText, setEditText] = useState('');
 
@@ -3290,7 +3310,12 @@
             <div className="notes-list">
               {notes.map(note => (
                 <div key={note.id} className="note-card">
-                  <div className="note-position">
+                  <div
+                    className="note-position"
+                    onClick={() => navigateToNote(note)}
+                    style={{ cursor: 'pointer' }}
+                    title="Click to navigate to this location"
+                  >
                     {note.timestamp !== undefined
                       ? formatTime(note.timestamp)
                       : `Sentence ${note.position + 1}`}
