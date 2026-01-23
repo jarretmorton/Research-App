@@ -3097,29 +3097,28 @@
       const getNotesForSource = (sourceId) => notes.filter(n => n.sourceId === sourceId);
 
       const exportToOneNote = () => {
-        let exportText = '# Marginalia Notes Export\n\n';
-        
+        let exportText = '';
+        let firstSource = true;
+
         Object.entries(groupedSources).forEach(([date, dateSources]) => {
-          exportText += `## ${date}\n\n`;
-          
           dateSources.forEach(source => {
-            exportText += `### ${source.title}\n`;
-            exportText += `Type: ${source.type} | URL: ${source.url || 'N/A'}\n\n`;
-            
             const sourceNotes = getNotesForSource(source.id);
             if (sourceNotes.length > 0) {
-              exportText += '**Notes:**\n';
+              // Add blank line between sources (except before first)
+              if (!firstSource) {
+                exportText += '\n';
+              }
+              firstSource = false;
+
+              exportText += `[${source.title}](${source.url || source.link || ''})\n`;
+              exportText += 'Notes:\n';
               sourceNotes.forEach(note => {
-                const position = note.timestamp !== undefined 
-                  ? `[${formatTime(note.timestamp)}]` 
-                  : `[Sentence ${note.position + 1}]`;
-                exportText += `- ${position} ${note.text}\n`;
+                exportText += `- ${note.text}\n`;
               });
             }
-            exportText += '\n---\n\n';
           });
         });
-        
+
         navigator.clipboard.writeText(exportText);
       };
 
@@ -3208,26 +3207,19 @@
       };
 
       const copyNote = (note) => {
-        const position = note.timestamp !== undefined 
-          ? `[${formatTime(note.timestamp)}]` 
-          : `[Sentence ${note.position + 1}]`;
-        navigator.clipboard.writeText(`${position} ${note.text}`);
+        const noteText = `[${currentSource.title}](${currentSource.url || currentSource.link || ''})\nNotes:\n- ${note.text}`;
+        navigator.clipboard.writeText(noteText);
         showToast('Note copied to clipboard');
       };
 
       const exportAllNotes = () => {
         if (!currentSource || notes.length === 0) return;
-        
-        let exportText = `# Notes: ${currentSource.title}\n\n`;
+
+        let exportText = `[${currentSource.title}](${currentSource.url || currentSource.link || ''})\nNotes:\n`;
         notes.forEach(note => {
-          const position = note.timestamp !== undefined 
-            ? `[${formatTime(note.timestamp)}]` 
-            : `[Sentence ${note.position + 1}]`;
-          exportText += `${position} ${note.text}\n`;
-          if (note.context) exportText += `  > ${note.context}\n`;
-          exportText += '\n';
+          exportText += `- ${note.text}\n`;
         });
-        
+
         navigator.clipboard.writeText(exportText);
         showToast('All notes copied to clipboard');
       };
