@@ -1551,7 +1551,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.9</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.0</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1673,6 +1673,7 @@
       const [whisperLoading, setWhisperLoading] = useState(false);
       const [whisperProgress, setWhisperProgress] = useState(0);
       const [isTranscribing, setIsTranscribing] = useState(false);
+      const [autoScroll, setAutoScroll] = useState(true);
 
       const utteranceRef = useRef(null);
       const mediaRecorderRef = useRef(null);
@@ -1685,11 +1686,14 @@
       const wasCancelledRef = useRef(false);
       const wakeLockRef = useRef(null);
       const sentenceRefs = useRef({});
+      const readerContainerRef = useRef(null);
+      const isManualScrollingRef = useRef(false);
 
       // Expose navigation method to parent
       useImperativeHandle(ref, () => ({
         navigateToSentence: (index) => {
           setCurrentSentenceIndex(index);
+          setAutoScroll(true);
           // Scroll to the sentence after a brief delay to ensure render
           setTimeout(() => {
             const sentenceElement = sentenceRefs.current[index];
@@ -1700,9 +1704,45 @@
         }
       }));
 
+      // Auto-scroll to current sentence when playing
+      useEffect(() => {
+        if (autoScroll && content) {
+          const sentenceElement = sentenceRefs.current[currentSentenceIndex];
+          if (sentenceElement) {
+            isManualScrollingRef.current = false;
+            sentenceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }, [currentSentenceIndex, autoScroll, content]);
+
+      // Detect manual scrolling to disable auto-scroll
+      useEffect(() => {
+        const container = readerContainerRef.current;
+        if (!container) return;
+
+        let scrollTimeout;
+        const handleScroll = () => {
+          // Only disable auto-scroll if this is a user-initiated scroll
+          if (!isManualScrollingRef.current && autoScroll) {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+              setAutoScroll(false);
+            }, 150);
+          }
+          isManualScrollingRef.current = false;
+        };
+
+        container.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+          container.removeEventListener('scroll', handleScroll);
+          clearTimeout(scrollTimeout);
+        };
+      }, [autoScroll]);
+
       // Skip to next sentence (stops current and plays next)
       const skipForward = () => {
         if (currentSentenceIndex < sentencesRef.current.length - 1) {
+          setAutoScroll(true);
           wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           const nextIndex = currentSentenceIndex + 1;
@@ -1715,6 +1755,7 @@
 
       // Skip back - restart current sentence, or go to previous if pressed quickly
       const skipBack = () => {
+        setAutoScroll(true);
         const now = Date.now();
         const timeSinceLastPress = now - lastBackPressRef.current;
         lastBackPressRef.current = now;
@@ -2174,6 +2215,7 @@
           setIsPlaying(false);
           releaseWakeLock();
         } else {
+          setAutoScroll(true);
           speakFromIndex(currentSentenceIndex);
         }
       };
@@ -2530,7 +2572,7 @@
                 </div>
               </div>
               
-              <div className="reader-body">
+              <div className="reader-body" ref={readerContainerRef}>
                 <div className="reader-content">
                   {content.sentences.map((sentence, index) => (
                     <span
