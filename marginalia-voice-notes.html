@@ -1614,7 +1614,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.2</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.3</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1638,11 +1638,11 @@
                 <Icons.Library /> Library
               </button>
               <button
-                className={`nav-tab notes-button ${sidebarOpen ? 'active' : ''} ${!currentSource ? 'disabled' : ''}`}
-                onClick={() => currentSource && setSidebarOpen(!sidebarOpen)}
-                disabled={!currentSource}
+                className={`nav-tab notes-button ${sidebarOpen ? 'active' : ''} ${!currentSource || activeTab === 'library' ? 'disabled' : ''}`}
+                onClick={() => currentSource && activeTab !== 'library' && setSidebarOpen(!sidebarOpen)}
+                disabled={!currentSource || activeTab === 'library'}
                 style={{ position: 'relative' }}
-                title={!currentSource ? 'Load a source to view notes' : 'Toggle notes'}
+                title={!currentSource ? 'Load a source to view notes' : activeTab === 'library' ? 'Notes not available in library view' : 'Toggle notes'}
               >
                 <Icons.StickyNote /> Notes
                 {currentNotes.length > 0 && (
