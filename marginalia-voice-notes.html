@@ -309,15 +309,16 @@
       border-color: var(--accent);
     }
 
-    .notes-button.active {
-      background: var(--accent);
-      color: white;
-      border-color: var(--accent);
-    }
-
     .notes-button:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+    }
+
+    .notes-button.active:not(:disabled) {
+      background: var(--accent) !important;
+      color: white !important;
+      border-color: var(--accent) !important;
+      box-shadow: 0 2px 8px var(--shadow);
     }
 
     /* Main Content */
@@ -1608,13 +1609,26 @@
 
       const currentNotes = notes.filter(n => n.sourceId === currentSource?.id);
 
+      // Determine if notes button should be enabled based on current tab and source type
+      const isNotesAvailable = (() => {
+        if (activeTab === 'library') return false;
+        if (!currentSource) return false;
+        if (activeTab === 'reader') {
+          return currentSource.type === 'article' || currentSource.type === 'pdf';
+        }
+        if (activeTab === 'media') {
+          return currentSource.type === 'youtube';
+        }
+        return false;
+      })();
+
       return (
         <div className="app-container">
           <header className="header">
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.3</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.4</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1638,14 +1652,14 @@
                 <Icons.Library /> Library
               </button>
               <button
-                className={`nav-tab notes-button ${sidebarOpen ? 'active' : ''} ${!currentSource || activeTab === 'library' ? 'disabled' : ''}`}
-                onClick={() => currentSource && activeTab !== 'library' && setSidebarOpen(!sidebarOpen)}
-                disabled={!currentSource || activeTab === 'library'}
+                className={`nav-tab notes-button ${sidebarOpen && isNotesAvailable ? 'active' : ''} ${!isNotesAvailable ? 'disabled' : ''}`}
+                onClick={() => isNotesAvailable && setSidebarOpen(!sidebarOpen)}
+                disabled={!isNotesAvailable}
                 style={{ position: 'relative' }}
-                title={!currentSource ? 'Load a source to view notes' : activeTab === 'library' ? 'Notes not available in library view' : 'Toggle notes'}
+                title={!isNotesAvailable ? (activeTab === 'library' ? 'Notes not available in library view' : 'Load a source to view notes') : 'Toggle notes'}
               >
                 <Icons.StickyNote /> Notes
-                {currentNotes.length > 0 && (
+                {isNotesAvailable && currentNotes.length > 0 && (
                   <span style={{
                     position: 'absolute',
                     top: '2px',
