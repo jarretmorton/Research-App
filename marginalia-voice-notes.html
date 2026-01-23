@@ -1520,7 +1520,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.6</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.3.7</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -3097,6 +3097,12 @@
       const getNotesForSource = (sourceId) => notes.filter(n => n.sourceId === sourceId);
 
       const exportToOneNote = () => {
+        const getFirstThreeWords = (text) => {
+          if (!text) return '';
+          const words = text.trim().split(/\s+/).slice(0, 3);
+          return words.join(' ');
+        };
+
         let exportText = '';
         let firstSource = true;
 
@@ -3110,10 +3116,17 @@
               }
               firstSource = false;
 
-              exportText += `[${source.title}](${source.url || source.link || ''})\n`;
+              exportText += `${source.title} (${source.url || source.link || ''})\n`;
               exportText += 'Notes:\n';
               sourceNotes.forEach(note => {
-                exportText += `- ${note.text}\n`;
+                let notePrefix = '';
+                if (note.timestamp !== undefined) {
+                  notePrefix = `[${formatTime(note.timestamp)}] `;
+                } else if (note.position !== undefined && note.context) {
+                  const firstThree = getFirstThreeWords(note.context);
+                  notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+                }
+                exportText += `- ${notePrefix}${note.text}\n`;
               });
             }
           });
@@ -3207,7 +3220,21 @@
       };
 
       const copyNote = (note) => {
-        const noteText = `[${currentSource.title}](${currentSource.url || currentSource.link || ''})\nNotes:\n- ${note.text}`;
+        const getFirstThreeWords = (text) => {
+          if (!text) return '';
+          const words = text.trim().split(/\s+/).slice(0, 3);
+          return words.join(' ');
+        };
+
+        let notePrefix = '';
+        if (note.timestamp !== undefined) {
+          notePrefix = `[${formatTime(note.timestamp)}] `;
+        } else if (note.position !== undefined && note.context) {
+          const firstThree = getFirstThreeWords(note.context);
+          notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+        }
+
+        const noteText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})\nNotes:\n- ${notePrefix}${note.text}`;
         navigator.clipboard.writeText(noteText);
         showToast('Note copied to clipboard');
       };
@@ -3215,9 +3242,22 @@
       const exportAllNotes = () => {
         if (!currentSource || notes.length === 0) return;
 
-        let exportText = `[${currentSource.title}](${currentSource.url || currentSource.link || ''})\nNotes:\n`;
+        const getFirstThreeWords = (text) => {
+          if (!text) return '';
+          const words = text.trim().split(/\s+/).slice(0, 3);
+          return words.join(' ');
+        };
+
+        let exportText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})\nNotes:\n`;
         notes.forEach(note => {
-          exportText += `- ${note.text}\n`;
+          let notePrefix = '';
+          if (note.timestamp !== undefined) {
+            notePrefix = `[${formatTime(note.timestamp)}] `;
+          } else if (note.position !== undefined && note.context) {
+            const firstThree = getFirstThreeWords(note.context);
+            notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+          }
+          exportText += `- ${notePrefix}${note.text}\n`;
         });
 
         navigator.clipboard.writeText(exportText);
