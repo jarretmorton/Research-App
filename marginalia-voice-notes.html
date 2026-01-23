@@ -1545,6 +1545,11 @@
         localStorage.setItem('marginalia_notes', JSON.stringify(notes));
       }, [notes]);
 
+      // Close sidebar when changing tabs
+      useEffect(() => {
+        setSidebarOpen(false);
+      }, [activeTab]);
+
       const showToast = (message) => {
         setToast({ show: true, message });
         setTimeout(() => setToast({ show: false, message: '' }), 3000);
@@ -1628,7 +1633,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.4</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.5</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
