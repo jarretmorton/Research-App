@@ -1775,7 +1775,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.9</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.0</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -1917,6 +1917,7 @@
       const sentenceRefs = useRef({});
       const readerContainerRef = useRef(null);
       const isManualScrollingRef = useRef(false);
+      const isStartingRecordingRef = useRef(false);
 
       // Expose navigation method to parent
       useImperativeHandle(ref, () => ({
@@ -2594,6 +2595,10 @@
           // Provide feedback that we're busy transcribing
           playSound('error');
           showToast('Still processing previous recording...');
+        } else if (isStartingRecordingRef.current) {
+          // Prevent concurrent startRecording calls
+          playSound('error');
+          showToast('Please wait, starting recording...');
         } else {
           startRecording();
         }
@@ -2605,6 +2610,12 @@
           showToast('Speech recognition still loading. Please wait or use text notes.');
           return;
         }
+
+        // Prevent race condition from multiple rapid clicks
+        if (isStartingRecordingRef.current) {
+          return;
+        }
+        isStartingRecordingRef.current = true;
 
         // Clean up any existing recording state
         stopRecording();
@@ -2719,6 +2730,7 @@
           // Start with timeslice for more reliable data capture
           mediaRecorder.start(100);
           setIsRecording(true);
+          isStartingRecordingRef.current = false; // Recording started successfully
           playSound('start');
           showToast('Listening...');
 
@@ -2806,6 +2818,7 @@
             playSound('error');
             showToast('Microphone access denied or unavailable');
             setIsRecording(false);
+            isStartingRecordingRef.current = false; // Failed to start
             // Clean up any partial setup
             if (audioContextRef.current) {
               try {
@@ -3097,6 +3110,7 @@
       const mediaRecorderRef = useRef(null);
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
+      const isStartingRecordingRef = useRef(false);
 
       // Expose seekTo method to parent
       useImperativeHandle(ref, () => ({
@@ -3303,6 +3317,10 @@
           // Provide feedback that we're busy transcribing
           playSound('error');
           showToast('Still processing previous recording...');
+        } else if (isStartingRecordingRef.current) {
+          // Prevent concurrent startRecording calls
+          playSound('error');
+          showToast('Please wait, starting recording...');
         } else {
           startRecording();
         }
@@ -3314,6 +3332,12 @@
           showToast('Speech recognition still loading. Please wait.');
           return;
         }
+
+        // Prevent race condition from multiple rapid clicks
+        if (isStartingRecordingRef.current) {
+          return;
+        }
+        isStartingRecordingRef.current = true;
 
         // Clean up any existing recording state
         stopRecording();
@@ -3405,6 +3429,7 @@
 
           mediaRecorder.start(100);
           setIsRecording(true);
+          isStartingRecordingRef.current = false; // Recording started successfully
           playSound('start');
           showToast('Listening...');
 
@@ -3492,6 +3517,7 @@
             playSound('error');
             showToast('Microphone access denied or unavailable');
             setIsRecording(false);
+            isStartingRecordingRef.current = false; // Failed to start
             // Clean up any partial setup
             if (audioContextRef.current) {
               try {
