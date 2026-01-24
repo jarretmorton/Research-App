@@ -1775,7 +1775,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.0</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.1</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2747,10 +2747,10 @@
               analyzerRef.current = analyzer;
 
               const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+              const frequencyData = new Uint8Array(analyzer.frequencyBinCount);
               const recordingStartTime = Date.now();
               let lastSoundTime = Date.now();
               let gracePeriodEnded = false;
-              const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
               const SILENCE_DURATION = 2500; // 2.5 seconds of silence before auto-stop
               const GRACE_PERIOD = 2000; // 2 seconds grace period before checking for silence
 
@@ -2768,18 +2768,45 @@
                   gracePeriodEnded = true;
                 }
 
-                analyzer.getByteTimeDomainData(dataArray);
+                // Get frequency data for voice detection
+                analyzer.getByteFrequencyData(frequencyData);
 
-                // Calculate average volume
+                // Voice typically exists in 85Hz - 4000Hz range
+                // Calculate which frequency bins correspond to this range
+                const sampleRate = audioContext.sampleRate;
+                const binCount = analyzer.frequencyBinCount;
+                const binSize = sampleRate / (binCount * 2);
+
+                const voiceStartBin = Math.floor(85 / binSize);
+                const voiceEndBin = Math.floor(4000 / binSize);
+
+                // Calculate average energy in voice frequency range
+                let voiceEnergy = 0;
+                let voiceBinCount = 0;
+                for (let i = voiceStartBin; i < voiceEndBin && i < binCount; i++) {
+                  voiceEnergy += frequencyData[i];
+                  voiceBinCount++;
+                }
+                const avgVoiceEnergy = voiceBinCount > 0 ? voiceEnergy / voiceBinCount : 0;
+
+                // Also check overall amplitude for additional confidence
+                analyzer.getByteTimeDomainData(dataArray);
                 let sum = 0;
                 for (let i = 0; i < dataArray.length; i++) {
                   const amplitude = Math.abs(dataArray[i] - 128);
                   sum += amplitude;
                 }
-                const average = sum / dataArray.length;
+                const avgAmplitude = sum / dataArray.length;
 
-                // If sound detected, reset silence timer
-                if (average > SILENCE_THRESHOLD) {
+                // Voice detected if there's energy in voice frequencies AND sufficient amplitude
+                // These thresholds are more Google-like: higher and more selective
+                const VOICE_ENERGY_THRESHOLD = 30; // Energy in voice frequency range (0-255)
+                const AMPLITUDE_THRESHOLD = 8; // Overall amplitude (0-127)
+
+                const isVoiceDetected = avgVoiceEnergy > VOICE_ENERGY_THRESHOLD && avgAmplitude > AMPLITUDE_THRESHOLD;
+
+                // If voice detected, reset silence timer
+                if (isVoiceDetected) {
                   lastSoundTime = Date.now();
                   if (silenceTimeoutRef.current) {
                     clearTimeout(silenceTimeoutRef.current);
@@ -3446,10 +3473,10 @@
               analyzerRef.current = analyzer;
 
               const dataArray = new Uint8Array(analyzer.frequencyBinCount);
+              const frequencyData = new Uint8Array(analyzer.frequencyBinCount);
               const recordingStartTime = Date.now();
               let lastSoundTime = Date.now();
               let gracePeriodEnded = false;
-              const SILENCE_THRESHOLD = 10; // Volume threshold (0-255)
               const SILENCE_DURATION = 2500; // 2.5 seconds of silence before auto-stop
               const GRACE_PERIOD = 2000; // 2 seconds grace period before checking for silence
 
@@ -3467,18 +3494,45 @@
                   gracePeriodEnded = true;
                 }
 
-                analyzer.getByteTimeDomainData(dataArray);
+                // Get frequency data for voice detection
+                analyzer.getByteFrequencyData(frequencyData);
 
-                // Calculate average volume
+                // Voice typically exists in 85Hz - 4000Hz range
+                // Calculate which frequency bins correspond to this range
+                const sampleRate = audioContext.sampleRate;
+                const binCount = analyzer.frequencyBinCount;
+                const binSize = sampleRate / (binCount * 2);
+
+                const voiceStartBin = Math.floor(85 / binSize);
+                const voiceEndBin = Math.floor(4000 / binSize);
+
+                // Calculate average energy in voice frequency range
+                let voiceEnergy = 0;
+                let voiceBinCount = 0;
+                for (let i = voiceStartBin; i < voiceEndBin && i < binCount; i++) {
+                  voiceEnergy += frequencyData[i];
+                  voiceBinCount++;
+                }
+                const avgVoiceEnergy = voiceBinCount > 0 ? voiceEnergy / voiceBinCount : 0;
+
+                // Also check overall amplitude for additional confidence
+                analyzer.getByteTimeDomainData(dataArray);
                 let sum = 0;
                 for (let i = 0; i < dataArray.length; i++) {
                   const amplitude = Math.abs(dataArray[i] - 128);
                   sum += amplitude;
                 }
-                const average = sum / dataArray.length;
+                const avgAmplitude = sum / dataArray.length;
 
-                // If sound detected, reset silence timer
-                if (average > SILENCE_THRESHOLD) {
+                // Voice detected if there's energy in voice frequencies AND sufficient amplitude
+                // These thresholds are more Google-like: higher and more selective
+                const VOICE_ENERGY_THRESHOLD = 30; // Energy in voice frequency range (0-255)
+                const AMPLITUDE_THRESHOLD = 8; // Overall amplitude (0-127)
+
+                const isVoiceDetected = avgVoiceEnergy > VOICE_ENERGY_THRESHOLD && avgAmplitude > AMPLITUDE_THRESHOLD;
+
+                // If voice detected, reset silence timer
+                if (isVoiceDetected) {
                   lastSoundTime = Date.now();
                   if (silenceTimeoutRef.current) {
                     clearTimeout(silenceTimeoutRef.current);
