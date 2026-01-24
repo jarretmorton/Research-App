@@ -742,15 +742,7 @@
       flex-shrink: 0;
     }
 
-    /* Hide Car button on desktop, show only on mobile */
-    .car-mode-btn {
-      display: none;
-    }
-
     @media (max-width: 600px) {
-      .car-mode-btn {
-        display: flex !important;
-      }
       .note-controls {
         gap: 0.375rem;
       }
@@ -1820,10 +1812,24 @@
       const [sidebarOpen, setSidebarOpen] = useState(false);
       const [undoData, setUndoData] = useState(null);
       const [carMode, setCarMode] = useState(false);
+      const [isMobileDevice, setIsMobileDevice] = useState(false);
 
       const readerRef = useRef(null);
       const mediaRef = useRef(null);
       const undoTimeoutRef = useRef(null);
+
+      // Detect if user is on a mobile device
+      useEffect(() => {
+        const checkMobile = () => {
+          const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+          // Check for mobile devices (iOS, Android, Windows Phone)
+          const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
+          // Also check for touch capability
+          const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+          setIsMobileDevice(isMobile || hasTouch);
+        };
+        checkMobile();
+      }, []);
 
       // Save to localStorage
       useEffect(() => {
@@ -1980,7 +1986,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.14</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.15</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -3326,13 +3332,15 @@
                   >
                     <Icons.Search /> Search
                   </button>
-                  <button
-                    className={`note-btn car-mode-btn ${carMode ? 'car-mode active' : ''}`}
-                    onClick={() => setCarMode(!carMode)}
-                    title="Car Mode"
-                  >
-                    <Icons.Car />
-                  </button>
+                  {isMobileDevice && (
+                    <button
+                      className={`note-btn ${carMode ? 'car-mode active' : ''}`}
+                      onClick={() => setCarMode(!carMode)}
+                      title="Car Mode"
+                    >
+                      <Icons.Car />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
