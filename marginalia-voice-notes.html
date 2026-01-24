@@ -1583,6 +1583,19 @@
         setSidebarOpen(false);
       }, [activeTab]);
 
+      // Ensure voices are loaded
+      useEffect(() => {
+        // Load voices immediately if available
+        const voices = window.speechSynthesis.getVoices();
+
+        // Some browsers load voices asynchronously
+        if (!voices.length) {
+          window.speechSynthesis.addEventListener('voiceschanged', () => {
+            window.speechSynthesis.getVoices();
+          }, { once: true });
+        }
+      }, []);
+
       const showToast = (message) => {
         setToast({ show: true, message });
         setTimeout(() => setToast({ show: false, message: '' }), 3000);
@@ -1711,7 +1724,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.6</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.7</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2415,6 +2428,33 @@
         }
       };
 
+      // Get best available voice (prioritize Google, then Microsoft)
+      const getBestVoice = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (!voices.length) return null;
+
+        // Filter for English voices only
+        const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+
+        // Prioritize Google voices
+        const googleVoice = englishVoices.find(voice => voice.name.includes('Google'));
+        if (googleVoice) return googleVoice;
+
+        // Then Microsoft voices (prefer ones with "Online" or newer versions)
+        const microsoftVoice = englishVoices.find(voice =>
+          voice.name.includes('Microsoft') &&
+          (voice.name.includes('Online') || voice.name.includes('Natural'))
+        );
+        if (microsoftVoice) return microsoftVoice;
+
+        // Fall back to any Microsoft voice
+        const anyMicrosoftVoice = englishVoices.find(voice => voice.name.includes('Microsoft'));
+        if (anyMicrosoftVoice) return anyMicrosoftVoice;
+
+        // Fall back to first English voice
+        return englishVoices[0] || voices[0];
+      };
+
       const speakFromIndex = useCallback((index) => {
         if (!content || index >= content.sentences.length) {
           setIsPlaying(false);
@@ -2428,6 +2468,12 @@
         setCurrentSentenceIndex(index);
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
+
+        // Set best available voice
+        const bestVoice = getBestVoice();
+        if (bestVoice) {
+          utterance.voice = bestVoice;
+        }
 
         utterance.onend = () => {
           // Don't continue if speech was intentionally cancelled
