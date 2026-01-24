@@ -1986,7 +1986,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.16</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.17</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2050,6 +2050,7 @@
                   showToast={showToast}
                   carMode={carMode}
                   setCarMode={setCarMode}
+                  isMobileDevice={isMobileDevice}
                 />
               )}
               {activeTab === 'media' && (
@@ -2096,7 +2097,7 @@
     }
 
     // Reader View Component
-    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, carMode, setCarMode }, ref) => {
+    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
       const [loading, setLoading] = useState(false);
       const [content, setContent] = useState(null);
