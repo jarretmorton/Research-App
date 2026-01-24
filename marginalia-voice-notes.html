@@ -1775,7 +1775,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.1</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.2</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2447,12 +2447,29 @@
       // Wake Lock helpers to keep screen on during playback
       const requestWakeLock = async () => {
         try {
-          if ('wakeLock' in navigator && !wakeLockRef.current) {
+          if ('wakeLock' in navigator) {
+            // Release old wake lock if it exists
+            if (wakeLockRef.current) {
+              try {
+                await wakeLockRef.current.release();
+              } catch (e) {
+                // Ignore errors from releasing
+              }
+            }
+
+            // Always request fresh wake lock (handles screen on/off cycles)
             wakeLockRef.current = await navigator.wakeLock.request('screen');
             console.log('Wake Lock activated');
+
+            // Listen for release event to clear the ref
+            wakeLockRef.current.addEventListener('release', () => {
+              console.log('Wake Lock was released');
+              wakeLockRef.current = null;
+            });
           }
         } catch (err) {
           console.log('Wake Lock not supported or failed:', err);
+          wakeLockRef.current = null;
         }
       };
 
@@ -3242,12 +3259,29 @@
       // Wake Lock helpers to keep screen on during playback
       const requestWakeLock = async () => {
         try {
-          if ('wakeLock' in navigator && !wakeLockRef.current) {
+          if ('wakeLock' in navigator) {
+            // Release old wake lock if it exists
+            if (wakeLockRef.current) {
+              try {
+                await wakeLockRef.current.release();
+              } catch (e) {
+                // Ignore errors from releasing
+              }
+            }
+
+            // Always request fresh wake lock (handles screen on/off cycles)
             wakeLockRef.current = await navigator.wakeLock.request('screen');
             console.log('Wake Lock activated');
+
+            // Listen for release event to clear the ref
+            wakeLockRef.current.addEventListener('release', () => {
+              console.log('Wake Lock was released');
+              wakeLockRef.current = null;
+            });
           }
         } catch (err) {
           console.log('Wake Lock not supported or failed:', err);
+          wakeLockRef.current = null;
         }
       };
 
