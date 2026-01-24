@@ -1775,7 +1775,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.8</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.9</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2590,7 +2590,11 @@
       const handleVoiceButtonClick = () => {
         if (isRecording) {
           stopRecording();
-        } else if (!isTranscribing) {
+        } else if (isTranscribing) {
+          // Provide feedback that we're busy transcribing
+          playSound('error');
+          showToast('Still processing previous recording...');
+        } else {
           startRecording();
         }
       };
@@ -3295,7 +3299,11 @@
       const handleVoiceButtonClick = () => {
         if (isRecording) {
           stopRecording();
-        } else if (!isTranscribing) {
+        } else if (isTranscribing) {
+          // Provide feedback that we're busy transcribing
+          playSound('error');
+          showToast('Still processing previous recording...');
+        } else {
           startRecording();
         }
       };
