@@ -742,7 +742,15 @@
       flex-shrink: 0;
     }
 
+    /* Hide Car button on desktop, show only on mobile */
+    .car-mode-btn {
+      display: none;
+    }
+
     @media (max-width: 600px) {
+      .car-mode-btn {
+        display: flex;
+      }
       .note-controls {
         gap: 0.375rem;
       }
@@ -1972,7 +1980,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.11</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.12</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -3319,7 +3327,7 @@
                     <Icons.Search /> Search
                   </button>
                   <button
-                    className={`note-btn ${carMode ? 'car-mode active' : ''}`}
+                    className={`note-btn car-mode-btn ${carMode ? 'car-mode active' : ''}`}
                     onClick={() => setCarMode(!carMode)}
                     title="Car Mode"
                   >
