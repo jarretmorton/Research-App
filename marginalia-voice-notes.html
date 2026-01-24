@@ -797,10 +797,9 @@
     .playback-bar.car-mode .playback-controls {
       width: 100%;
       flex-direction: column;
-      gap: 1rem;
-      flex: 1;
+      gap: 0.75rem;
+      flex: 0 0 auto;
       justify-content: flex-start;
-      min-height: 0;
     }
 
     .playback-bar.car-mode .transport-buttons {
@@ -874,30 +873,19 @@
     .playback-bar.car-mode .note-controls {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto;
+      grid-template-rows: 1fr 1fr;
       gap: 0.75rem;
       width: 100%;
-      flex-shrink: 0;
+      flex: 1;
+      min-height: 0;
     }
 
-    /* Voice and Type buttons - top row */
-    .note-btn.car-mode:nth-child(1),
-    .note-btn.car-mode:nth-child(2) {
-      padding: 1rem;
-      font-size: 1.25rem;
-      min-height: 80px;
-    }
-
-    /* Search and Car buttons - bottom row */
-    .note-btn.car-mode:nth-child(3),
-    .note-btn.car-mode:nth-child(4) {
-      padding: 0.75rem;
-      font-size: 1rem;
-      min-height: 50px;
-    }
-
+    /* All note buttons same size */
     .note-btn.car-mode {
       width: 100%;
+      padding: 1rem;
+      font-size: 1.25rem;
+      min-height: 60px;
     }
 
     .note-btn.car-mode svg {
@@ -1989,7 +1977,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.18</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.20</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
