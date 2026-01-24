@@ -833,6 +833,7 @@
     }
 
     .progress-speed-group.car-mode {
+      display: flex;
       width: 100%;
       flex-direction: row;
       gap: 1rem;
@@ -873,27 +874,26 @@
     .playback-bar.car-mode .note-controls {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr;
-      gap: 1rem;
+      grid-template-rows: auto auto;
+      gap: 0.75rem;
       width: 100%;
       flex-shrink: 0;
     }
 
-    /* Voice and Type buttons - make them square in top row */
+    /* Voice and Type buttons - top row */
     .note-btn.car-mode:nth-child(1),
     .note-btn.car-mode:nth-child(2) {
-      aspect-ratio: 1;
       padding: 1rem;
       font-size: 1.25rem;
-      min-height: 90px;
+      min-height: 80px;
     }
 
-    /* Search and Car buttons - rectangular in bottom row */
+    /* Search and Car buttons - bottom row */
     .note-btn.car-mode:nth-child(3),
     .note-btn.car-mode:nth-child(4) {
-      padding: 1rem;
+      padding: 0.75rem;
       font-size: 1rem;
-      min-height: 70px;
+      min-height: 50px;
     }
 
     .note-btn.car-mode {
