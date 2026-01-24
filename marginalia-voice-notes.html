@@ -1549,6 +1549,57 @@
       );
     }
 
+    // Audio feedback utility
+    const playSound = (type) => {
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.type = 'sine';
+        gainNode.gain.value = 0.3; // Volume
+
+        const now = audioContext.currentTime;
+
+        if (type === 'start') {
+          // High beep for start recording
+          oscillator.frequency.value = 800;
+          gainNode.gain.setValueAtTime(0.3, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          oscillator.start(now);
+          oscillator.stop(now + 0.1);
+        } else if (type === 'stop') {
+          // Low beep for stop recording
+          oscillator.frequency.value = 400;
+          gainNode.gain.setValueAtTime(0.3, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+          oscillator.start(now);
+          oscillator.stop(now + 0.1);
+        } else if (type === 'success') {
+          // Two-tone chime for success
+          oscillator.frequency.setValueAtTime(523, now);
+          oscillator.frequency.setValueAtTime(659, now + 0.1);
+          gainNode.gain.setValueAtTime(0.3, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+          oscillator.start(now);
+          oscillator.stop(now + 0.3);
+        } else if (type === 'error') {
+          // Low buzz for error
+          oscillator.type = 'square';
+          oscillator.frequency.value = 200;
+          gainNode.gain.setValueAtTime(0.2, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+          oscillator.start(now);
+          oscillator.stop(now + 0.2);
+        }
+      } catch (err) {
+        console.log('Audio feedback unavailable:', err);
+      }
+    };
+
     // Main App
     function App() {
       const [activeTab, setActiveTab] = useState('reader');
@@ -1724,7 +1775,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.7</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.4.8</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2507,20 +2558,52 @@
       const silenceTimeoutRef = useRef(null);
       const isProcessing = isRecording || isTranscribing;
 
-      const startRecording = async () => {
-        // Don't start if already processing
-        if (isProcessing) return;
-
-        if (!whisperReady) {
-          showToast('Speech recognition still loading. Please wait or use text notes.');
-          return;
+      const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          playSound('stop');
+          mediaRecorderRef.current.stop();
         }
 
-        // Clean up any existing stream before starting new recording
+        // Clean up audio context
+        if (audioContextRef.current) {
+          try {
+            audioContextRef.current.close();
+          } catch (err) {
+            console.log('Error closing audio context:', err);
+          }
+          audioContextRef.current = null;
+        }
+
+        // Clean up stream
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
           streamRef.current = null;
         }
+
+        // Clear silence timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+      };
+
+      const handleVoiceButtonClick = () => {
+        if (isRecording) {
+          stopRecording();
+        } else if (!isTranscribing) {
+          startRecording();
+        }
+      };
+
+      const startRecording = async () => {
+        if (!whisperReady) {
+          playSound('error');
+          showToast('Speech recognition still loading. Please wait or use text notes.');
+          return;
+        }
+
+        // Clean up any existing recording state
+        stopRecording();
 
         // Store state before stopping playback (use local vars, not refs)
         const wasPlaying = isPlaying;
@@ -2574,6 +2657,7 @@
             streamRef.current = null;
 
             if (audioChunks.length === 0) {
+              playSound('error');
               showToast('No audio captured. Try again.');
               setIsRecording(false);
               if (wasPlaying && speakFromIndexRef.current) {
@@ -2585,6 +2669,7 @@
             const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
 
             if (audioBlob.size < 500) {
+              playSound('error');
               showToast('Recording too short. Try again.');
               setIsRecording(false);
               if (wasPlaying && speakFromIndexRef.current) {
@@ -2608,12 +2693,15 @@
                   context: sentence?.substring(0, 100) + '...',
                   type: 'voice'
                 });
+                playSound('success');
                 showToast('Note saved!');
               } else {
+                playSound('error');
                 showToast('No speech detected - try speaking louder');
               }
             } catch (error) {
               console.error('Transcription failed:', error);
+              playSound('error');
               showToast('Transcription failed. Try again.');
             }
             setIsTranscribing(false);
@@ -2627,6 +2715,7 @@
           // Start with timeslice for more reliable data capture
           mediaRecorder.start(100);
           setIsRecording(true);
+          playSound('start');
           showToast('Listening...');
 
             // Set up voice activity detection for auto-stop
@@ -2710,7 +2799,20 @@
             }
           } catch (error) {
             console.error('Failed to start recording:', error);
+            playSound('error');
             showToast('Microphone access denied or unavailable');
+            setIsRecording(false);
+            // Clean up any partial setup
+            if (audioContextRef.current) {
+              try {
+                audioContextRef.current.close();
+              } catch (err) {}
+              audioContextRef.current = null;
+            }
+            if (streamRef.current) {
+              streamRef.current.getTracks().forEach(track => track.stop());
+              streamRef.current = null;
+            }
           }
       };
 
@@ -2936,11 +3038,12 @@
                 <div className="note-controls">
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''}`}
-                    onClick={startRecording}
-                    disabled={isProcessing || whisperLoading}
+                    onClick={handleVoiceButtonClick}
+                    disabled={whisperLoading}
                   >
                     {whisperLoading ? `Loading ${whisperProgress}%` :
-                     isProcessing ? 'Processing...' :
+                     isRecording ? '⏹ Stop' :
+                     isTranscribing ? 'Processing...' :
                      <><Icons.Mic /> Voice</>}
                   </button>
                   <button
@@ -3166,14 +3269,46 @@
         setCurrentTime(newTime);
       };
 
-      const startRecording = async () => {
-        // Don't start if already processing
-        if (isProcessing) return;
+      const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          playSound('stop');
+          mediaRecorderRef.current.stop();
+        }
 
+        // Clean up audio context
+        if (audioContextRef.current) {
+          try {
+            audioContextRef.current.close();
+          } catch (err) {
+            console.log('Error closing audio context:', err);
+          }
+          audioContextRef.current = null;
+        }
+
+        // Clear silence timeout
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+      };
+
+      const handleVoiceButtonClick = () => {
+        if (isRecording) {
+          stopRecording();
+        } else if (!isTranscribing) {
+          startRecording();
+        }
+      };
+
+      const startRecording = async () => {
         if (!whisperReady) {
+          playSound('error');
           showToast('Speech recognition still loading. Please wait.');
           return;
         }
+
+        // Clean up any existing recording state
+        stopRecording();
 
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
@@ -3218,6 +3353,7 @@
             stream.getTracks().forEach(track => track.stop());
 
             if (audioChunksRef.current.length === 0) {
+              playSound('error');
               showToast('No audio captured. Try again.');
               setIsRecording(false);
               return;
@@ -3226,6 +3362,7 @@
             const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
 
             if (audioBlob.size < 500) {
+              playSound('error');
               showToast('Recording too short. Try again.');
               setIsRecording(false);
               return;
@@ -3244,12 +3381,15 @@
                   timestamp: recordingTime,
                   type: 'voice'
                 });
+                playSound('success');
                 showToast('Note saved!');
               } else {
+                playSound('error');
                 showToast('No speech detected - try speaking louder');
               }
             } catch (error) {
               console.error('Transcription failed:', error);
+              playSound('error');
               showToast('Transcription failed. Try again.');
             }
             setIsTranscribing(false);
@@ -3257,6 +3397,7 @@
 
           mediaRecorder.start(100);
           setIsRecording(true);
+          playSound('start');
           showToast('Listening...');
 
             // Set up voice activity detection for auto-stop
@@ -3340,7 +3481,16 @@
             }
           } catch (error) {
             console.error('Failed to start recording:', error);
+            playSound('error');
             showToast('Microphone access denied or unavailable');
+            setIsRecording(false);
+            // Clean up any partial setup
+            if (audioContextRef.current) {
+              try {
+                audioContextRef.current.close();
+              } catch (err) {}
+              audioContextRef.current = null;
+            }
           }
       };
 
@@ -3435,10 +3585,12 @@
                 <div className="note-controls">
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''}`}
-                    onClick={startRecording}
-                    disabled={isProcessing}
+                    onClick={handleVoiceButtonClick}
+                    disabled={false}
                   >
-                    {isProcessing ? 'Processing...' : <><Icons.Mic /> Voice</>}
+                    {isRecording ? '⏹ Stop' :
+                     isTranscribing ? 'Processing...' :
+                     <><Icons.Mic /> Voice</>}
                   </button>
                 </div>
               </div>
