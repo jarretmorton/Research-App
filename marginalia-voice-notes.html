@@ -742,6 +742,10 @@
     }
 
     @media (max-width: 600px) {
+      .note-controls {
+        gap: 0.25rem;
+      }
+
       .note-btn {
         padding: 0.5rem 0.2rem;
         gap: 0.15rem;
@@ -754,6 +758,10 @@
     }
 
     @media (max-width: 500px) {
+      .note-controls {
+        gap: 0.2rem;
+      }
+
       .note-btn {
         padding: 0.5rem 0.15rem;
         gap: 0.1rem;
@@ -761,6 +769,10 @@
     }
 
     @media (max-width: 400px) {
+      .note-controls {
+        gap: 0.15rem;
+      }
+
       .note-btn {
         padding: 0.5rem 0.1rem;
         font-size: 0.7rem;
@@ -774,6 +786,10 @@
     }
 
     @media (max-width: 350px) {
+      .note-controls {
+        gap: 0.1rem;
+      }
+
       .note-btn {
         padding: 0.5rem 0.05rem;
         gap: 0.05rem;
@@ -1609,11 +1625,7 @@
         height: 22px;
       }
 
-      .note-btn {
-        padding: 0.75rem 1rem;
-        font-size: 0.875rem;
-        min-height: 52px;
-      }
+      /* Note: .note-btn padding handled by more aggressive media queries below */
 
       .note-btn svg {
         width: 22px;
@@ -2004,7 +2016,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.9</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.10</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
