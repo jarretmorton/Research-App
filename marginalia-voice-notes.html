@@ -742,14 +742,14 @@
       flex-shrink: 0;
     }
 
-    /* Hide Car button on desktop, show only on mobile (v1.5.13) */
+    /* Hide Car button on desktop, show only on mobile */
     .car-mode-btn {
-      display: none !important;
+      display: none;
     }
 
     @media (max-width: 600px) {
       .car-mode-btn {
-        display: flex;
+        display: flex !important;
       }
       .note-controls {
         gap: 0.375rem;
@@ -1980,7 +1980,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.13</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.14</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
