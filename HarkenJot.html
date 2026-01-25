@@ -2116,10 +2116,6 @@
       const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [speed, setSpeed] = useState(1);
-      const [availableVoices, setAvailableVoices] = useState([]);
-      const [selectedVoiceURI, setSelectedVoiceURI] = useState(() => {
-        return localStorage.getItem('harkenjot_selectedVoice') || '';
-      });
       const [manualContent, setManualContent] = useState('');
       const [showManualInput, setShowManualInput] = useState(false);
       const [showTextNote, setShowTextNote] = useState(false);
@@ -2175,51 +2171,6 @@
           sentencesRef.current = currentSource.sentences;
         }
       }, [currentSource]);
-
-      // Load available voices
-      useEffect(() => {
-        const loadVoices = () => {
-          const voices = window.speechSynthesis.getVoices();
-          if (voices.length > 0) {
-            // Sort voices: English first, then by name
-            const sortedVoices = voices.sort((a, b) => {
-              const aIsEnglish = a.lang.startsWith('en');
-              const bIsEnglish = b.lang.startsWith('en');
-              if (aIsEnglish && !bIsEnglish) return -1;
-              if (!aIsEnglish && bIsEnglish) return 1;
-              return a.name.localeCompare(b.name);
-            });
-            setAvailableVoices(sortedVoices);
-          }
-        };
-
-        loadVoices();
-        window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
-        return () => {
-          window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
-        };
-      }, []);
-
-      // Save selected voice to localStorage
-      useEffect(() => {
-        if (selectedVoiceURI) {
-          localStorage.setItem('harkenjot_selectedVoice', selectedVoiceURI);
-        } else {
-          localStorage.removeItem('harkenjot_selectedVoice');
-        }
-      }, [selectedVoiceURI]);
-
-      // Preview a voice
-      const previewVoice = (voiceURI) => {
-        window.speechSynthesis.cancel();
-        const voice = availableVoices.find(v => v.voiceURI === voiceURI);
-        if (voice) {
-          const utterance = new SpeechSynthesisUtterance('Hello, this is a preview of this voice.');
-          utterance.voice = voice;
-          utterance.rate = speed;
-          window.speechSynthesis.speak(utterance);
-        }
-      };
 
       // Auto-scroll to current sentence when playing
       useEffect(() => {
@@ -2784,18 +2735,12 @@
         }
       };
 
-      // Get best available voice (user selection first, then auto-detect)
+      // Get best available voice (prioritize Google, then Microsoft)
       const getBestVoice = () => {
         const voices = window.speechSynthesis.getVoices();
         if (!voices.length) return null;
 
-        // If user has selected a voice, use it
-        if (selectedVoiceURI) {
-          const userVoice = voices.find(v => v.voiceURI === selectedVoiceURI);
-          if (userVoice) return userVoice;
-        }
-
-        // Auto-detect: Filter for English voices only
+        // Filter for English voices only
         const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
 
         // Prioritize Google voices
@@ -3375,48 +3320,16 @@
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
-                      <div className={`speed-control ${carMode ? 'car-mode' : ''}`}>
-                        <label>Speed</label>
-                        <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
-                          <option value="0.5">0.5x</option>
-                          <option value="0.75">0.75x</option>
-                          <option value="1">1x</option>
-                          <option value="1.25">1.25x</option>
-                          <option value="1.5">1.5x</option>
-                          <option value="2">2x</option>
-                        </select>
-                      </div>
-
-                      <div className={`speed-control ${carMode ? 'car-mode' : ''}`}>
-                        <label>Voice</label>
-                        <select
-                          value={selectedVoiceURI}
-                          onChange={(e) => setSelectedVoiceURI(e.target.value)}
-                          style={{ maxWidth: carMode ? '70px' : '90px' }}
-                        >
-                          <option value="">Auto</option>
-                          {availableVoices.map(voice => (
-                            <option key={voice.voiceURI} value={voice.voiceURI}>
-                              {voice.name.replace('Microsoft ', '').replace('Google ', '').replace(' Online', '')} ({voice.lang})
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => previewVoice(selectedVoiceURI || getBestVoice()?.voiceURI)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '2px',
-                            display: 'flex',
-                            alignItems: 'center'
-                          }}
-                          title="Preview voice"
-                        >
-                          <Icons.Play style={{ width: '14px', height: '14px' }} />
-                        </button>
-                      </div>
+                    <div className={`speed-control ${carMode ? 'car-mode' : ''}`}>
+                      <label>Speed</label>
+                      <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1">1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                      </select>
                     </div>
                   </div>
                 </div>
