@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Remembrance - Voice Notes for Reading & Listening</title>
+  <title>HarkenJot - Voice Notes for Reading & Listening</title>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -1791,16 +1791,34 @@
       }
     };
 
+    // Migrate localStorage from old 'marginalia_' keys to new 'harkenjot_' keys
+    (function migrateLocalStorage() {
+      const migrations = [
+        ['marginalia_sources', 'harkenjot_sources'],
+        ['marginalia_notes', 'harkenjot_notes'],
+        ['harkenjot_positions', 'harkenjot_positions'],
+        ['harkenjot_subscriptions', 'harkenjot_subscriptions'],
+        ['harkenjot_media_positions', 'harkenjot_media_positions']
+      ];
+      migrations.forEach(([oldKey, newKey]) => {
+        const oldData = localStorage.getItem(oldKey);
+        if (oldData && !localStorage.getItem(newKey)) {
+          localStorage.setItem(newKey, oldData);
+          localStorage.removeItem(oldKey);
+        }
+      });
+    })();
+
     // Main App
     function App() {
       const [activeTab, setActiveTab] = useState('reader');
       const [sources, setSources] = useState(() => {
-        const saved = localStorage.getItem('marginalia_sources');
+        const saved = localStorage.getItem('harkenjot_sources');
         return saved ? JSON.parse(saved) : [];
       });
       const [currentSource, setCurrentSource] = useState(null);
       const [notes, setNotes] = useState(() => {
-        const saved = localStorage.getItem('marginalia_notes');
+        const saved = localStorage.getItem('harkenjot_notes');
         return saved ? JSON.parse(saved) : [];
       });
       const [toast, setToast] = useState({ show: false, message: '' });
@@ -1826,11 +1844,11 @@
 
       // Save to localStorage
       useEffect(() => {
-        localStorage.setItem('marginalia_sources', JSON.stringify(sources));
+        localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
       }, [sources]);
 
       useEffect(() => {
-        localStorage.setItem('marginalia_notes', JSON.stringify(notes));
+        localStorage.setItem('harkenjot_notes', JSON.stringify(notes));
       }, [notes]);
 
       // Close sidebar when changing tabs
@@ -1977,9 +1995,9 @@
         <div className="app-container">
           <header className="header">
             <div className="logo">
-              <div className="logo-icon">R</div>
+              <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.25</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.25</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
@@ -2325,7 +2343,7 @@
           sentencesRef.current = currentSource.sentences || splitIntoSentences(currentSource.content);
 
           // Load saved position for this source
-          const savedPositions = JSON.parse(localStorage.getItem('marginalia_positions') || '{}');
+          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
           const savedPosition = savedPositions[currentSource.id];
           if (savedPosition !== undefined && savedPosition < sentencesRef.current.length) {
             setCurrentSentenceIndex(savedPosition);
@@ -2338,9 +2356,9 @@
       // Save position whenever it changes
       useEffect(() => {
         if (currentSource?.id && content) {
-          const savedPositions = JSON.parse(localStorage.getItem('marginalia_positions') || '{}');
+          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
           savedPositions[currentSource.id] = currentSentenceIndex;
-          localStorage.setItem('marginalia_positions', JSON.stringify(savedPositions));
+          localStorage.setItem('harkenjot_positions', JSON.stringify(savedPositions));
         }
       }, [currentSentenceIndex, currentSource?.id, content]);
 
@@ -3372,7 +3390,7 @@
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
       const [subscriptions, setSubscriptions] = useState(() => {
-        const saved = localStorage.getItem('marginalia_subscriptions');
+        const saved = localStorage.getItem('harkenjot_subscriptions');
         return saved ? JSON.parse(saved) : [];
       });
       
@@ -3427,7 +3445,7 @@
 
       // Save subscriptions
       useEffect(() => {
-        localStorage.setItem('marginalia_subscriptions', JSON.stringify(subscriptions));
+        localStorage.setItem('harkenjot_subscriptions', JSON.stringify(subscriptions));
       }, [subscriptions]);
 
       // Initialize YouTube API
@@ -3443,9 +3461,9 @@
       // Save position whenever it changes
       useEffect(() => {
         if (currentSource?.id && videoId && currentTime > 0) {
-          const savedPositions = JSON.parse(localStorage.getItem('marginalia_media_positions') || '{}');
+          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
           savedPositions[currentSource.id] = currentTime;
-          localStorage.setItem('marginalia_media_positions', JSON.stringify(savedPositions));
+          localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
         }
       }, [currentTime, currentSource?.id, videoId]);
 
