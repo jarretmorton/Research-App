@@ -782,6 +782,13 @@
       flex-wrap: nowrap;
     }
 
+    /* Car button - square in regular mode */
+    .note-btn:nth-child(4):not(.car-mode) {
+      flex: 0 0 auto;
+      aspect-ratio: 1;
+      padding: 0.5rem;
+    }
+
     /* Car Mode */
     .playback-bar.car-mode {
       flex: 1;
@@ -1972,7 +1979,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.24</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.25</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
