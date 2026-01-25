@@ -1812,9 +1812,7 @@
           const userAgent = navigator.userAgent || navigator.vendor || window.opera;
           // Check for mobile devices (iOS, Android, Windows Phone)
           const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
-          // Also check for touch capability
-          const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-          setIsMobileDevice(isMobile || hasTouch);
+          setIsMobileDevice(isMobile);
         };
         checkMobile();
       }, []);
@@ -1974,7 +1972,7 @@
             <div className="logo">
               <div className="logo-icon">R</div>
               <div>
-                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.23</span></div>
+                <div className="logo-text">Remembrance <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.24</span></div>
                 <div className="logo-tagline">Voice notes for reading & listening</div>
               </div>
             </div>
