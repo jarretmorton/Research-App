@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.37</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.38</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2107,6 +2107,11 @@
                   setCurrentSource={(source) => {
                     setCurrentSource(source);
                     setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                  }}
+                  openSourceWithNotes={(source) => {
+                    setCurrentSource(source);
+                    setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                    setSidebarOpen(true);
                   }}
                   deleteNote={deleteNote}
                   deleteSource={deleteSource}
@@ -4052,7 +4057,7 @@
     });
 
     // Library View Component
-    function LibraryView({ sources, notes, setCurrentSource, deleteNote, deleteSource, setSources, setNotes, showToast }) {
+    function LibraryView({ sources, notes, setCurrentSource, openSourceWithNotes, deleteNote, deleteSource, setSources, setNotes, showToast }) {
       const groupedSources = sources.reduce((acc, source) => {
         const date = new Date(source.createdAt).toDateString();
         if (!acc[date]) acc[date] = [];
@@ -4194,7 +4199,15 @@
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div className="note-count">
+                        <div
+                          className="note-count"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openSourceWithNotes(source);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                          title="Open source and view notes"
+                        >
                           <Icons.Pencil />
                           {getNotesForSource(source.id).length} notes
                         </div>
