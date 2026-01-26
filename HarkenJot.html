@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.42</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.43</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3437,6 +3437,7 @@
       const [duration, setDuration] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
+      const [spotifyEmbed, setSpotifyEmbed] = useState(null);
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
 
@@ -3536,11 +3537,25 @@
         if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
           return 'youtube';
         }
+        // Spotify URLs
+        if (lowerUrl.includes('open.spotify.com') || lowerUrl.includes('spotify.com')) {
+          return 'spotify';
+        }
         // Podcast/audio URLs (RSS feeds or direct audio files)
         if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
             lowerUrl.includes('.mp3') || lowerUrl.includes('.m4a') || lowerUrl.includes('.ogg') ||
-            lowerUrl.includes('podcast') || lowerUrl.includes('anchor.fm') || lowerUrl.includes('spotify.com')) {
+            lowerUrl.includes('podcast') || lowerUrl.includes('anchor.fm')) {
           return 'podcast';
+        }
+        return null;
+      };
+
+      // Extract Spotify embed info from URL
+      const extractSpotifyEmbed = (url) => {
+        // Match patterns like: open.spotify.com/episode/ID, open.spotify.com/track/ID, open.spotify.com/show/ID
+        const match = url.match(/open\.spotify\.com\/(episode|track|show|album|playlist)\/([a-zA-Z0-9]+)/);
+        if (match) {
+          return { type: match[1], id: match[2] };
         }
         return null;
       };
@@ -3556,6 +3571,7 @@
           }
 
           setVideoId(id);
+          setSpotifyEmbed(null);
 
           addSource({
             type: 'youtube',
@@ -3572,10 +3588,30 @@
               window.onYouTubeIframeAPIReady = () => initPlayer(id);
             }
           }, 100);
+        } else if (urlType === 'spotify') {
+          const embed = extractSpotifyEmbed(url);
+          if (!embed) {
+            showToast('Invalid Spotify URL');
+            return;
+          }
+
+          setSpotifyEmbed(embed);
+          setVideoId(null);
+
+          const typeLabels = { episode: 'Episode', track: 'Track', show: 'Show', album: 'Album', playlist: 'Playlist' };
+          addSource({
+            type: 'spotify',
+            title: `Spotify ${typeLabels[embed.type] || 'Content'}`,
+            url: url,
+            spotifyType: embed.type,
+            spotifyId: embed.id
+          });
+
+          showToast('Spotify content loaded');
         } else if (urlType === 'podcast') {
-          showToast('Podcast support coming soon');
+          showToast('Podcast RSS support coming soon');
         } else {
-          showToast('Please enter a valid YouTube or podcast URL');
+          showToast('Please enter a valid YouTube or Spotify URL');
         }
       };
 
@@ -3948,7 +3984,7 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste YouTube or podcast URL..."
+                placeholder="Paste YouTube or Spotify URL..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -3963,7 +3999,7 @@
               <div className="youtube-container">
                 <div id="youtube-player"></div>
               </div>
-              
+
               <div className="playback-bar">
                 <div className="playback-controls">
                   <div className="transport-buttons">
@@ -4014,11 +4050,40 @@
                 </div>
               </div>
             </div>
+          ) : spotifyEmbed ? (
+            <div className="media-container">
+              <div className="spotify-container" style={{ borderRadius: '12px', overflow: 'hidden', background: '#282828' }}>
+                <iframe
+                  src={`https://open.spotify.com/embed/${spotifyEmbed.type}/${spotifyEmbed.id}?utm_source=generator&theme=0`}
+                  width="100%"
+                  height={spotifyEmbed.type === 'track' ? '152' : '352'}
+                  frameBorder="0"
+                  allowFullScreen=""
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                  loading="lazy"
+                  style={{ borderRadius: '12px' }}
+                ></iframe>
+              </div>
+
+              <div className="playback-bar">
+                <div className="note-controls" style={{ width: '100%', justifyContent: 'center' }}>
+                  <button
+                    className={`note-btn ${isProcessing ? 'processing' : ''}`}
+                    onClick={handleVoiceButtonClick}
+                    disabled={false}
+                  >
+                    {isRecording ? '⏹ Stop' :
+                     isTranscribing ? 'Processing...' :
+                     <><Icons.Mic /> Voice</>}
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="empty-state">
               <div className="empty-state-icon">🎧</div>
               <h3>Add Media</h3>
-              <p>Paste a YouTube URL to start listening. Add voice notes at any timestamp while you listen.</p>
+              <p>Paste a YouTube or Spotify URL to start listening. Add voice notes while you listen.</p>
             </div>
           )}
         </div>
