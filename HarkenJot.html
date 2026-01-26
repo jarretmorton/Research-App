@@ -2011,7 +2011,7 @@
           return currentSource.type === 'article' || currentSource.type === 'pdf';
         }
         if (activeTab === 'media') {
-          return currentSource.type === 'youtube';
+          return currentSource.type === 'youtube' || currentSource.type === 'podcast';
         }
         return false;
       })();
@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.45</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.46</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3442,6 +3442,8 @@
       const [isLoadingPodcast, setIsLoadingPodcast] = useState(false);
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
+      const [showTextNote, setShowTextNote] = useState(false);
+      const [textNote, setTextNote] = useState('');
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -3449,6 +3451,7 @@
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
       const isStartingRecordingRef = useRef(false);
+      const wasPlayingRef = useRef(false);
 
       // Expose seekTo method to parent
       useImperativeHandle(ref, () => ({
@@ -3483,9 +3486,20 @@
           setPodcastAudio({
             audioUrl: currentSource.audioUrl,
             title: currentSource.title,
-            showName: currentSource.showName || ''
+            showName: currentSource.showName || '',
+            description: currentSource.description || ''
           });
           setUrl(currentSource.url);
+          // Restore saved position after audio loads
+          setTimeout(() => {
+            if (audioPlayerRef.current) {
+              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+              const savedPosition = savedPositions[currentSource.id];
+              if (savedPosition) {
+                audioPlayerRef.current.currentTime = savedPosition;
+              }
+            }
+          }, 500);
         }
       }, [currentSource]);
 
@@ -3511,14 +3525,14 @@
         }
       }, []);
 
-      // Save position whenever it changes
+      // Save position whenever it changes (for both YouTube and podcast)
       useEffect(() => {
-        if (currentSource?.id && videoId && currentTime > 0) {
+        if (currentSource?.id && (videoId || podcastAudio) && currentTime > 0) {
           const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
           savedPositions[currentSource.id] = currentTime;
           localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
         }
-      }, [currentTime, currentSource?.id, videoId]);
+      }, [currentTime, currentSource?.id, videoId, podcastAudio]);
 
       // Pause and save when page becomes hidden
       useEffect(() => {
@@ -3861,6 +3875,49 @@
 
         showToast('Sent to Reader tab');
         setActiveTab('reader');
+      };
+
+      // Text note functions
+      const openTextNote = () => {
+        // Store playback state and pause if playing
+        if (isPlaying) {
+          wasPlayingRef.current = true;
+          if (audioPlayerRef.current) audioPlayerRef.current.pause();
+          if (playerRef.current) playerRef.current.pauseVideo();
+          setIsPlaying(false);
+        } else {
+          wasPlayingRef.current = false;
+        }
+        setShowTextNote(true);
+      };
+
+      const saveTextNote = () => {
+        if (textNote.trim() && currentSource) {
+          addNote({
+            sourceId: currentSource.id,
+            timestamp: currentTime,
+            text: textNote.trim(),
+            type: 'text'
+          });
+          showToast('Note saved');
+        }
+        setTextNote('');
+        setShowTextNote(false);
+        // Resume playback if it was playing
+        if (wasPlayingRef.current) {
+          if (audioPlayerRef.current) audioPlayerRef.current.play();
+          if (playerRef.current) playerRef.current.playVideo();
+        }
+      };
+
+      const cancelTextNote = () => {
+        setTextNote('');
+        setShowTextNote(false);
+        // Resume playback if it was playing
+        if (wasPlayingRef.current) {
+          if (audioPlayerRef.current) audioPlayerRef.current.play();
+          if (playerRef.current) playerRef.current.playVideo();
+        }
       };
 
       // Wake Lock helpers to keep screen on during playback
@@ -4248,6 +4305,24 @@
                 <div id="youtube-player"></div>
               </div>
 
+              {showTextNote && (
+                <div className="text-note-container">
+                  <input
+                    type="text"
+                    className="url-input text-note-input"
+                    placeholder="Type your note..."
+                    value={textNote}
+                    onChange={(e) => setTextNote(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && saveTextNote()}
+                    autoFocus
+                  />
+                  <div className="text-note-buttons">
+                    <button className="btn btn-primary" onClick={saveTextNote}>Save</button>
+                    <button className="btn btn-secondary" onClick={cancelTextNote}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
               <div className="playback-bar">
                 <div className="playback-controls">
                   <div className="transport-buttons">
@@ -4295,33 +4370,55 @@
                      isTranscribing ? 'Processing...' :
                      <><Icons.Mic /> Voice</>}
                   </button>
+                  <button
+                    className="note-btn"
+                    onClick={openTextNote}
+                  >
+                    <Icons.Keyboard /> Type
+                  </button>
                 </div>
               </div>
             </div>
           ) : podcastAudio ? (
-            <div className="media-container">
-              <div className="podcast-container" style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '12px' }}>
-                {podcastAudio.artworkUrl && (
-                  <img
-                    src={podcastAudio.artworkUrl}
-                    alt="Podcast artwork"
-                    style={{ width: '80px', height: '80px', borderRadius: '8px', marginBottom: '0.5rem' }}
-                  />
-                )}
-                <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '0.25rem' }}>{podcastAudio.title}</div>
-                {podcastAudio.showName && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>{podcastAudio.showName}</div>
-                )}
-                <audio
-                  ref={audioPlayerRef}
-                  src={podcastAudio.audioUrl}
-                  onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-                  onDurationChange={(e) => setDuration(e.target.duration)}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  style={{ display: 'none' }}
-                />
+            <div className="reader-container">
+              <div className="reader-header">
+                <div className="source-info">
+                  <h2>{podcastAudio.title}</h2>
+                  <div className="source-meta">
+                    <span className="library-item-type podcast">Podcast</span>
+                    {podcastAudio.showName && <span>{podcastAudio.showName}</span>}
+                    <span>{formatTime(duration)}</span>
+                  </div>
+                </div>
               </div>
+
+              <audio
+                ref={audioPlayerRef}
+                src={podcastAudio.audioUrl}
+                onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+                onDurationChange={(e) => setDuration(e.target.duration)}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                style={{ display: 'none' }}
+              />
+
+              {showTextNote && (
+                <div className="text-note-container">
+                  <input
+                    type="text"
+                    className="url-input text-note-input"
+                    placeholder="Type your note..."
+                    value={textNote}
+                    onChange={(e) => setTextNote(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && saveTextNote()}
+                    autoFocus
+                  />
+                  <div className="text-note-buttons">
+                    <button className="btn btn-primary" onClick={saveTextNote}>Save</button>
+                    <button className="btn btn-secondary" onClick={cancelTextNote}>Cancel</button>
+                  </div>
+                </div>
+              )}
 
               <div className="playback-bar">
                 <div className="playback-controls">
@@ -4384,16 +4481,19 @@
                      isTranscribing ? 'Processing...' :
                      <><Icons.Mic /> Voice</>}
                   </button>
-                  {podcastAudio?.description && (
-                    <button
-                      className="note-btn"
-                      onClick={sendToReader}
-                      title="Send episode description to Reader"
-                      style={{ marginLeft: '0.5rem' }}
-                    >
-                      <Icons.Book /> Read
-                    </button>
-                  )}
+                  <button
+                    className="note-btn"
+                    onClick={openTextNote}
+                  >
+                    <Icons.Keyboard /> Type
+                  </button>
+                  <button
+                    className="note-btn"
+                    onClick={sendToReader}
+                    title="Send episode description to Reader"
+                  >
+                    <Icons.Book /> Read
+                  </button>
                 </div>
               </div>
             </div>
