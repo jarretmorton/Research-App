@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.41</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.42</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3431,18 +3431,12 @@
 
     // Media View Component
     const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }, ref) => {
-      const [mediaType, setMediaType] = useState('youtube');
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
       const [duration, setDuration] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
-      const [subscriptions, setSubscriptions] = useState(() => {
-        const saved = localStorage.getItem('harkenjot_subscriptions');
-        return saved ? JSON.parse(saved) : [];
-      });
-      
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
 
@@ -3492,11 +3486,6 @@
         return () => clearInterval(interval);
       }, []);
 
-      // Save subscriptions
-      useEffect(() => {
-        localStorage.setItem('harkenjot_subscriptions', JSON.stringify(subscriptions));
-      }, [subscriptions]);
-
       // Initialize YouTube API
       useEffect(() => {
         if (!window.YT) {
@@ -3540,30 +3529,54 @@
         return match ? match[1] : null;
       };
 
-      const loadVideo = () => {
-        const id = extractVideoId(url);
-        if (!id) {
-          showToast('Invalid YouTube URL');
-          return;
+      // Detect URL type based on the actual URL
+      const detectUrlType = (url) => {
+        const lowerUrl = url.toLowerCase();
+        // YouTube URLs
+        if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
+          return 'youtube';
         }
-        
-        setVideoId(id);
-        
-        const newSource = addSource({
-          type: 'youtube',
-          title: 'YouTube Video',
-          url: url,
-          videoId: id
-        });
-        
-        // Initialize player after state update
-        setTimeout(() => {
-          if (window.YT && window.YT.Player) {
-            initPlayer(id);
-          } else {
-            window.onYouTubeIframeAPIReady = () => initPlayer(id);
+        // Podcast/audio URLs (RSS feeds or direct audio files)
+        if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
+            lowerUrl.includes('.mp3') || lowerUrl.includes('.m4a') || lowerUrl.includes('.ogg') ||
+            lowerUrl.includes('podcast') || lowerUrl.includes('anchor.fm') || lowerUrl.includes('spotify.com')) {
+          return 'podcast';
+        }
+        return null;
+      };
+
+      const loadMedia = () => {
+        const urlType = detectUrlType(url);
+
+        if (urlType === 'youtube') {
+          const id = extractVideoId(url);
+          if (!id) {
+            showToast('Invalid YouTube URL');
+            return;
           }
-        }, 100);
+
+          setVideoId(id);
+
+          addSource({
+            type: 'youtube',
+            title: 'YouTube Video',
+            url: url,
+            videoId: id
+          });
+
+          // Initialize player after state update
+          setTimeout(() => {
+            if (window.YT && window.YT.Player) {
+              initPlayer(id);
+            } else {
+              window.onYouTubeIframeAPIReady = () => initPlayer(id);
+            }
+          }, 100);
+        } else if (urlType === 'podcast') {
+          showToast('Podcast support coming soon');
+        } else {
+          showToast('Please enter a valid YouTube or podcast URL');
+        }
       };
 
       // Wake Lock helpers to keep screen on during playback
@@ -3926,47 +3939,21 @@
           }
       };
 
-      const addSubscription = () => {
-        const id = extractVideoId(url);
-        if (id) {
-          setSubscriptions(prev => [...prev, { id, url, title: 'YouTube Video', addedAt: new Date().toISOString() }]);
-          showToast('Added to subscriptions');
-        }
-      };
-
       const progress = duration ? (currentTime / duration) * 100 : 0;
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="media-tabs">
-            <button 
-              className={`media-tab ${mediaType === 'youtube' ? 'active' : ''}`}
-              onClick={() => setMediaType('youtube')}
-            >
-              <Icons.YouTube /> YouTube
-            </button>
-            <button 
-              className={`media-tab ${mediaType === 'podcast' ? 'active' : ''}`}
-              onClick={() => setMediaType('podcast')}
-            >
-              <Icons.Podcast /> Podcast
-            </button>
-          </div>
-
           <div className="input-section">
             <div className="input-group">
               <input
                 type="text"
                 className="url-input"
-                placeholder={mediaType === 'youtube' ? 'Paste YouTube URL...' : 'Paste podcast RSS feed or episode URL...'}
+                placeholder="Paste YouTube or podcast URL..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
-              <button className="btn btn-primary" onClick={loadVideo}>
-                <Icons.Play /> Load
-              </button>
-              <button className="btn btn-secondary" onClick={addSubscription} title="Add to subscriptions">
-                <Icons.Plus />
+              <button className="btn btn-primary" onClick={loadMedia}>
+                <Icons.Link /> Load
               </button>
             </div>
           </div>
@@ -4032,25 +4019,6 @@
               <div className="empty-state-icon">🎧</div>
               <h3>Add Media</h3>
               <p>Paste a YouTube URL to start listening. Add voice notes at any timestamp while you listen.</p>
-            </div>
-          )}
-
-          {subscriptions.length > 0 && (
-            <div className="subscription-list">
-              <h4 style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Your Subscriptions</h4>
-              {subscriptions.map((sub, index) => (
-                <div 
-                  key={index} 
-                  className={`subscription-item ${videoId === sub.id ? 'active' : ''}`}
-                  onClick={() => { setUrl(sub.url); setVideoId(sub.id); }}
-                >
-                  <div className="subscription-thumb"><Icons.YouTube /></div>
-                  <div className="subscription-info">
-                    <div className="subscription-title">{sub.title}</div>
-                    <div className="subscription-channel">YouTube</div>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
         </div>
