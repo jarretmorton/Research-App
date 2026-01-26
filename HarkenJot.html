@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.43</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.44</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3437,11 +3437,13 @@
       const [duration, setDuration] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
-      const [spotifyEmbed, setSpotifyEmbed] = useState(null);
+      const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName }
+      const [isLoadingPodcast, setIsLoadingPodcast] = useState(false);
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
 
       const playerRef = useRef(null);
+      const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
       const mediaRecorderRef = useRef(null);
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
@@ -3452,6 +3454,8 @@
         seekTo: (timestamp) => {
           if (playerRef.current) {
             playerRef.current.seekTo(timestamp, true);
+          } else if (audioPlayerRef.current) {
+            audioPlayerRef.current.currentTime = timestamp;
           }
         }
       }));
@@ -3461,10 +3465,11 @@
       const silenceTimeoutRef = useRef(null);
       const isProcessing = isRecording || isTranscribing;
 
-      // Load currentSource into videoId when source is selected from library
+      // Load currentSource into player when source is selected from library
       useEffect(() => {
         if (currentSource && currentSource.type === 'youtube' && currentSource.videoId) {
           setVideoId(currentSource.videoId);
+          setPodcastAudio(null);
           setUrl(currentSource.url);
           // Initialize player after state update
           setTimeout(() => {
@@ -3472,6 +3477,14 @@
               initPlayer(currentSource.videoId);
             }
           }, 100);
+        } else if (currentSource && currentSource.type === 'podcast' && currentSource.audioUrl) {
+          setVideoId(null);
+          setPodcastAudio({
+            audioUrl: currentSource.audioUrl,
+            title: currentSource.title,
+            showName: currentSource.showName || ''
+          });
+          setUrl(currentSource.url);
         }
       }, [currentSource]);
 
@@ -3537,27 +3550,233 @@
         if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
           return 'youtube';
         }
-        // Spotify URLs
+        // Spotify URLs (will be converted to RSS)
         if (lowerUrl.includes('open.spotify.com') || lowerUrl.includes('spotify.com')) {
           return 'spotify';
         }
-        // Podcast/audio URLs (RSS feeds or direct audio files)
+        // Direct audio file URLs
+        if (lowerUrl.match(/\.(mp3|m4a|ogg|wav|aac)(\?|$)/)) {
+          return 'audio';
+        }
+        // RSS feed URLs
         if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
-            lowerUrl.includes('.mp3') || lowerUrl.includes('.m4a') || lowerUrl.includes('.ogg') ||
-            lowerUrl.includes('podcast') || lowerUrl.includes('anchor.fm')) {
-          return 'podcast';
+            lowerUrl.includes('feeds.') || lowerUrl.includes('anchor.fm')) {
+          return 'rss';
         }
         return null;
       };
 
-      // Extract Spotify embed info from URL
-      const extractSpotifyEmbed = (url) => {
-        // Match patterns like: open.spotify.com/episode/ID, open.spotify.com/track/ID, open.spotify.com/show/ID
-        const match = url.match(/open\.spotify\.com\/(episode|track|show|album|playlist)\/([a-zA-Z0-9]+)/);
-        if (match) {
-          return { type: match[1], id: match[2] };
+      // Fetch Spotify metadata using oEmbed API
+      const fetchSpotifyMetadata = async (spotifyUrl) => {
+        try {
+          const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyUrl)}`;
+          const response = await fetch(oembedUrl);
+          if (!response.ok) throw new Error('Failed to fetch Spotify metadata');
+          const data = await response.json();
+          return {
+            title: data.title,
+            showName: data.provider_name === 'Spotify' ? data.title.split(' - ')[0] : data.provider_name,
+            thumbnailUrl: data.thumbnail_url
+          };
+        } catch (error) {
+          console.error('Spotify oEmbed error:', error);
+          return null;
         }
-        return null;
+      };
+
+      // Search for RSS feed using podcast name
+      const searchForRSSFeed = async (showName, episodeTitle) => {
+        try {
+          // Use iTunes Search API to find podcast RSS feed
+          const searchQuery = encodeURIComponent(showName);
+          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
+          if (!response.ok) throw new Error('iTunes search failed');
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+            // Return the first matching podcast's feed URL
+            return {
+              feedUrl: data.results[0].feedUrl,
+              podcastName: data.results[0].collectionName,
+              artworkUrl: data.results[0].artworkUrl600 || data.results[0].artworkUrl100
+            };
+          }
+          return null;
+        } catch (error) {
+          console.error('RSS search error:', error);
+          return null;
+        }
+      };
+
+      // Parse RSS feed and find episode
+      const parseRSSAndFindEpisode = async (feedUrl, episodeTitle) => {
+        try {
+          // Use a CORS proxy for RSS feeds
+          const corsProxy = 'https://api.allorigins.win/raw?url=';
+          const response = await fetch(corsProxy + encodeURIComponent(feedUrl));
+          if (!response.ok) throw new Error('Failed to fetch RSS feed');
+          const xmlText = await response.text();
+
+          const parser = new DOMParser();
+          const xml = parser.parseFromString(xmlText, 'text/xml');
+          const items = xml.querySelectorAll('item');
+
+          // Try to find matching episode by title
+          let bestMatch = null;
+          let bestScore = 0;
+
+          const normalizeTitle = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const targetTitle = normalizeTitle(episodeTitle);
+
+          items.forEach((item, index) => {
+            const title = item.querySelector('title')?.textContent || '';
+            const enclosure = item.querySelector('enclosure');
+            const audioUrl = enclosure?.getAttribute('url');
+
+            if (audioUrl) {
+              // Score based on title similarity
+              const itemTitle = normalizeTitle(title);
+              let score = 0;
+
+              // Check for substring match
+              if (itemTitle.includes(targetTitle) || targetTitle.includes(itemTitle)) {
+                score = 100;
+              } else {
+                // Count matching words
+                const targetWords = targetTitle.split(/\s+/);
+                const itemWords = itemTitle.split(/\s+/);
+                targetWords.forEach(word => {
+                  if (word.length > 3 && itemTitle.includes(word)) score += 10;
+                });
+              }
+
+              // Prefer first match if scores are equal (usually most recent)
+              if (score > bestScore || (score === bestScore && !bestMatch)) {
+                bestScore = score;
+                bestMatch = {
+                  title: title,
+                  audioUrl: audioUrl,
+                  description: item.querySelector('description')?.textContent || '',
+                  pubDate: item.querySelector('pubDate')?.textContent || ''
+                };
+              }
+            }
+          });
+
+          // If no good match, return first episode with audio
+          if (!bestMatch && items.length > 0) {
+            const firstItem = items[0];
+            const enclosure = firstItem.querySelector('enclosure');
+            if (enclosure?.getAttribute('url')) {
+              bestMatch = {
+                title: firstItem.querySelector('title')?.textContent || 'Unknown Episode',
+                audioUrl: enclosure.getAttribute('url'),
+                description: firstItem.querySelector('description')?.textContent || '',
+                pubDate: firstItem.querySelector('pubDate')?.textContent || ''
+              };
+            }
+          }
+
+          return bestMatch;
+        } catch (error) {
+          console.error('RSS parse error:', error);
+          return null;
+        }
+      };
+
+      // Load podcast from Spotify URL
+      const loadPodcastFromSpotify = async () => {
+        setIsLoadingPodcast(true);
+        showToast('Searching for podcast feed...');
+
+        try {
+          // Step 1: Get Spotify metadata
+          const metadata = await fetchSpotifyMetadata(url);
+          if (!metadata) {
+            showToast('Could not fetch Spotify metadata');
+            setIsLoadingPodcast(false);
+            return;
+          }
+
+          showToast(`Found: ${metadata.title}`);
+
+          // Step 2: Search for RSS feed
+          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
+          if (!rssInfo) {
+            showToast('Could not find RSS feed for this podcast');
+            setIsLoadingPodcast(false);
+            return;
+          }
+
+          showToast(`Found feed: ${rssInfo.podcastName}`);
+
+          // Step 3: Parse RSS and find episode
+          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
+          if (!episode) {
+            showToast('Could not find episode in RSS feed');
+            setIsLoadingPodcast(false);
+            return;
+          }
+
+          // Success! Load the audio
+          setVideoId(null);
+          setPodcastAudio({
+            audioUrl: episode.audioUrl,
+            title: episode.title,
+            showName: rssInfo.podcastName,
+            artworkUrl: rssInfo.artworkUrl
+          });
+
+          addSource({
+            type: 'podcast',
+            title: episode.title,
+            url: url,
+            audioUrl: episode.audioUrl,
+            showName: rssInfo.podcastName
+          });
+
+          showToast('Podcast loaded!');
+        } catch (error) {
+          console.error('Podcast loading error:', error);
+          showToast('Failed to load podcast');
+        }
+
+        setIsLoadingPodcast(false);
+      };
+
+      // Load direct RSS feed
+      const loadRSSFeed = async (feedUrl) => {
+        setIsLoadingPodcast(true);
+        showToast('Loading RSS feed...');
+
+        try {
+          const episode = await parseRSSAndFindEpisode(feedUrl, '');
+          if (!episode) {
+            showToast('Could not find episodes in RSS feed');
+            setIsLoadingPodcast(false);
+            return;
+          }
+
+          setVideoId(null);
+          setPodcastAudio({
+            audioUrl: episode.audioUrl,
+            title: episode.title,
+            showName: 'Podcast'
+          });
+
+          addSource({
+            type: 'podcast',
+            title: episode.title,
+            url: feedUrl,
+            audioUrl: episode.audioUrl
+          });
+
+          showToast('Podcast loaded!');
+        } catch (error) {
+          showToast('Failed to load RSS feed');
+        }
+
+        setIsLoadingPodcast(false);
       };
 
       const loadMedia = () => {
@@ -3571,7 +3790,7 @@
           }
 
           setVideoId(id);
-          setSpotifyEmbed(null);
+          setPodcastAudio(null);
 
           addSource({
             type: 'youtube',
@@ -3589,29 +3808,26 @@
             }
           }, 100);
         } else if (urlType === 'spotify') {
-          const embed = extractSpotifyEmbed(url);
-          if (!embed) {
-            showToast('Invalid Spotify URL');
-            return;
-          }
-
-          setSpotifyEmbed(embed);
+          loadPodcastFromSpotify();
+        } else if (urlType === 'rss') {
+          loadRSSFeed(url);
+        } else if (urlType === 'audio') {
+          // Direct audio URL
           setVideoId(null);
-
-          const typeLabels = { episode: 'Episode', track: 'Track', show: 'Show', album: 'Album', playlist: 'Playlist' };
-          addSource({
-            type: 'spotify',
-            title: `Spotify ${typeLabels[embed.type] || 'Content'}`,
-            url: url,
-            spotifyType: embed.type,
-            spotifyId: embed.id
+          setPodcastAudio({
+            audioUrl: url,
+            title: 'Audio',
+            showName: ''
           });
-
-          showToast('Spotify content loaded');
-        } else if (urlType === 'podcast') {
-          showToast('Podcast RSS support coming soon');
+          addSource({
+            type: 'podcast',
+            title: 'Audio',
+            url: url,
+            audioUrl: url
+          });
+          showToast('Audio loaded');
         } else {
-          showToast('Please enter a valid YouTube or Spotify URL');
+          showToast('Please enter a YouTube, Spotify, or RSS feed URL');
         }
       };
 
@@ -3984,12 +4200,12 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste YouTube or Spotify URL..."
+                placeholder="Paste YouTube, Spotify, or RSS feed URL..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
-              <button className="btn btn-primary" onClick={loadMedia}>
-                <Icons.Link /> Load
+              <button className="btn btn-primary" onClick={loadMedia} disabled={isLoadingPodcast}>
+                {isLoadingPodcast ? 'Loading...' : <><Icons.Link /> Load</>}
               </button>
             </div>
           </div>
@@ -4050,23 +4266,83 @@
                 </div>
               </div>
             </div>
-          ) : spotifyEmbed ? (
+          ) : podcastAudio ? (
             <div className="media-container">
-              <div className="spotify-container" style={{ borderRadius: '12px', overflow: 'hidden', background: '#282828' }}>
-                <iframe
-                  src={`https://open.spotify.com/embed/${spotifyEmbed.type}/${spotifyEmbed.id}?utm_source=generator&theme=0`}
-                  width="100%"
-                  height={spotifyEmbed.type === 'track' ? '152' : '352'}
-                  frameBorder="0"
-                  allowFullScreen=""
-                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                  loading="lazy"
-                  style={{ borderRadius: '12px' }}
-                ></iframe>
+              <div className="podcast-container" style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: '12px' }}>
+                {podcastAudio.artworkUrl && (
+                  <img
+                    src={podcastAudio.artworkUrl}
+                    alt="Podcast artwork"
+                    style={{ width: '80px', height: '80px', borderRadius: '8px', marginBottom: '0.5rem' }}
+                  />
+                )}
+                <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '0.25rem' }}>{podcastAudio.title}</div>
+                {podcastAudio.showName && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>{podcastAudio.showName}</div>
+                )}
+                <audio
+                  ref={audioPlayerRef}
+                  src={podcastAudio.audioUrl}
+                  onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+                  onDurationChange={(e) => setDuration(e.target.duration)}
+                  onPlay={() => setIsPlaying(true)}
+                  onPause={() => setIsPlaying(false)}
+                  style={{ display: 'none' }}
+                />
               </div>
 
               <div className="playback-bar">
-                <div className="note-controls" style={{ width: '100%', justifyContent: 'center' }}>
+                <div className="playback-controls">
+                  <div className="transport-buttons">
+                    <button
+                      className="skip-btn"
+                      onClick={() => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime -= 15; }}
+                      title="Back 15 seconds"
+                    >
+                      <Icons.Rewind />
+                      <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
+                    </button>
+                    <button className="play-btn" onClick={() => {
+                      if (audioPlayerRef.current) {
+                        if (isPlaying) {
+                          audioPlayerRef.current.pause();
+                        } else {
+                          audioPlayerRef.current.play();
+                        }
+                      }
+                    }}>
+                      {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                    </button>
+                    <button
+                      className="skip-btn"
+                      onClick={() => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime += 15; }}
+                      title="Forward 15 seconds"
+                    >
+                      <span style={{ fontSize: '0.65rem', marginRight: '2px' }}>15</span>
+                      <Icons.FastForward />
+                    </button>
+                  </div>
+
+                  <div className="progress-speed-group">
+                    <div className="progress-container">
+                      <div className="progress-bar" onClick={(e) => {
+                        if (audioPlayerRef.current && duration) {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const percent = (e.clientX - rect.left) / rect.width;
+                          audioPlayerRef.current.currentTime = percent * duration;
+                        }
+                      }} style={{ cursor: 'pointer' }}>
+                        <div className="progress-fill" style={{ width: `${progress}%` }} />
+                      </div>
+                      <div className="progress-text">
+                        <span>{formatTime(currentTime)}</span>
+                        <span>{formatTime(duration)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="note-controls">
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''}`}
                     onClick={handleVoiceButtonClick}
@@ -4083,7 +4359,7 @@
             <div className="empty-state">
               <div className="empty-state-icon">🎧</div>
               <h3>Add Media</h3>
-              <p>Paste a YouTube or Spotify URL to start listening. Add voice notes while you listen.</p>
+              <p>Paste a YouTube, Spotify, or podcast RSS URL to start listening. Add voice notes while you listen.</p>
             </div>
           )}
         </div>
