@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.46</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.47</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2099,6 +2099,9 @@
                   notes={currentNotes}
                   showToast={showToast}
                   setActiveTab={setActiveTab}
+                  carMode={carMode}
+                  setCarMode={setCarMode}
+                  isMobileDevice={isMobileDevice}
                 />
               )}
               {activeTab === 'library' && (
@@ -3431,7 +3434,7 @@
     });
 
     // Media View Component
-    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, setActiveTab }, ref) => {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, setActiveTab, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
@@ -4284,7 +4287,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="input-section">
+          <div className="input-section" style={{ display: carMode ? 'none' : 'block' }}>
             <div className="input-group">
               <input
                 type="text"
@@ -4301,7 +4304,7 @@
 
           {videoId ? (
             <div className="media-container">
-              <div className="youtube-container">
+              <div className="youtube-container" style={{ display: carMode ? 'none' : 'block' }}>
                 <div id="youtube-player"></div>
               </div>
 
@@ -4323,22 +4326,22 @@
                 </div>
               )}
 
-              <div className="playback-bar">
+              <div className={`playback-bar ${carMode ? 'car-mode' : ''}`}>
                 <div className="playback-controls">
                   <div className="transport-buttons">
                     <button
-                      className="skip-btn"
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
                       onClick={() => skipTime(-15)}
                       title="Back 15 seconds"
                     >
                       <Icons.Rewind />
                       <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
                     </button>
-                    <button className="play-btn" onClick={togglePlayback}>
+                    <button className={`play-btn ${carMode ? 'car-mode' : ''}`} onClick={togglePlayback}>
                       {isPlaying ? <Icons.Pause /> : <Icons.Play />}
                     </button>
                     <button
-                      className="skip-btn"
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
                       onClick={() => skipTime(15)}
                       title="Forward 15 seconds"
                     >
@@ -4347,9 +4350,9 @@
                     </button>
                   </div>
 
-                  <div className="progress-speed-group">
+                  <div className={`progress-speed-group ${carMode ? 'car-mode' : ''}`}>
                     <div className="progress-container">
-                      <div className="progress-bar">
+                      <div className={`progress-bar ${carMode ? 'car-mode' : ''}`}>
                         <div className="progress-fill" style={{ width: `${progress}%` }} />
                       </div>
                       <div className="progress-text">
@@ -4362,7 +4365,7 @@
 
                 <div className="note-controls">
                   <button
-                    className={`note-btn ${isProcessing ? 'processing' : ''}`}
+                    className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
                     onClick={handleVoiceButtonClick}
                     disabled={false}
                   >
@@ -4371,17 +4374,33 @@
                      <><Icons.Mic /> Voice</>}
                   </button>
                   <button
-                    className="note-btn"
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
                     onClick={openTextNote}
                   >
                     <Icons.Keyboard /> Type
                   </button>
+                  {isMobileDevice && (
+                    <button
+                      className={`note-btn ${carMode ? 'car-mode active' : ''}`}
+                      onClick={() => setCarMode(!carMode)}
+                      title="Car Mode"
+                    >
+                      <Icons.Car />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
           ) : podcastAudio ? (
             <div className="reader-container">
-              <div className="reader-header">
+              <div className="reader-header" style={{ display: carMode ? 'none' : 'flex' }}>
+                {podcastAudio.artworkUrl && (
+                  <img
+                    src={podcastAudio.artworkUrl}
+                    alt="Podcast artwork"
+                    style={{ width: '80px', height: '80px', borderRadius: '8px', marginRight: '1rem', flexShrink: 0 }}
+                  />
+                )}
                 <div className="source-info">
                   <h2>{podcastAudio.title}</h2>
                   <div className="source-meta">
@@ -4420,18 +4439,18 @@
                 </div>
               )}
 
-              <div className="playback-bar">
+              <div className={`playback-bar ${carMode ? 'car-mode' : ''}`}>
                 <div className="playback-controls">
                   <div className="transport-buttons">
                     <button
-                      className="skip-btn"
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
                       onClick={() => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime -= 15; }}
                       title="Back 15 seconds"
                     >
                       <Icons.Rewind />
                       <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
                     </button>
-                    <button className="play-btn" onClick={() => {
+                    <button className={`play-btn ${carMode ? 'car-mode' : ''}`} onClick={() => {
                       if (audioPlayerRef.current) {
                         if (isPlaying) {
                           audioPlayerRef.current.pause();
@@ -4443,7 +4462,7 @@
                       {isPlaying ? <Icons.Pause /> : <Icons.Play />}
                     </button>
                     <button
-                      className="skip-btn"
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
                       onClick={() => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime += 15; }}
                       title="Forward 15 seconds"
                     >
@@ -4452,9 +4471,9 @@
                     </button>
                   </div>
 
-                  <div className="progress-speed-group">
+                  <div className={`progress-speed-group ${carMode ? 'car-mode' : ''}`}>
                     <div className="progress-container">
-                      <div className="progress-bar" onClick={(e) => {
+                      <div className={`progress-bar ${carMode ? 'car-mode' : ''}`} onClick={(e) => {
                         if (audioPlayerRef.current && duration) {
                           const rect = e.currentTarget.getBoundingClientRect();
                           const percent = (e.clientX - rect.left) / rect.width;
@@ -4473,7 +4492,7 @@
 
                 <div className="note-controls">
                   <button
-                    className={`note-btn ${isProcessing ? 'processing' : ''}`}
+                    className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
                     onClick={handleVoiceButtonClick}
                     disabled={false}
                   >
@@ -4482,18 +4501,27 @@
                      <><Icons.Mic /> Voice</>}
                   </button>
                   <button
-                    className="note-btn"
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
                     onClick={openTextNote}
                   >
                     <Icons.Keyboard /> Type
                   </button>
                   <button
-                    className="note-btn"
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
                     onClick={sendToReader}
                     title="Send episode description to Reader"
                   >
                     <Icons.Book /> Read
                   </button>
+                  {isMobileDevice && (
+                    <button
+                      className={`note-btn ${carMode ? 'car-mode active' : ''}`}
+                      onClick={() => setCarMode(!carMode)}
+                      title="Car Mode"
+                    >
+                      <Icons.Car />
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
