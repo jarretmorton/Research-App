@@ -2022,7 +2022,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.44</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.45</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2098,6 +2098,7 @@
                   addNote={addNote}
                   notes={currentNotes}
                   showToast={showToast}
+                  setActiveTab={setActiveTab}
                 />
               )}
               {activeTab === 'library' && (
@@ -3430,14 +3431,14 @@
     });
 
     // Media View Component
-    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast }, ref) => {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, setActiveTab }, ref) => {
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
       const [duration, setDuration] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
-      const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName }
+      const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName, description, artworkUrl }
       const [isLoadingPodcast, setIsLoadingPodcast] = useState(false);
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
@@ -3724,7 +3725,8 @@
             audioUrl: episode.audioUrl,
             title: episode.title,
             showName: rssInfo.podcastName,
-            artworkUrl: rssInfo.artworkUrl
+            artworkUrl: rssInfo.artworkUrl,
+            description: episode.description // Store for optional "Send to Reader" feature
           });
 
           addSource({
@@ -3732,7 +3734,8 @@
             title: episode.title,
             url: url,
             audioUrl: episode.audioUrl,
-            showName: rssInfo.podcastName
+            showName: rssInfo.podcastName,
+            description: episode.description
           });
 
           showToast('Podcast loaded!');
@@ -3761,14 +3764,16 @@
           setPodcastAudio({
             audioUrl: episode.audioUrl,
             title: episode.title,
-            showName: 'Podcast'
+            showName: 'Podcast',
+            description: episode.description
           });
 
           addSource({
             type: 'podcast',
             title: episode.title,
             url: feedUrl,
-            audioUrl: episode.audioUrl
+            audioUrl: episode.audioUrl,
+            description: episode.description
           });
 
           showToast('Podcast loaded!');
@@ -3829,6 +3834,33 @@
         } else {
           showToast('Please enter a YouTube, Spotify, or RSS feed URL');
         }
+      };
+
+      // Send podcast description/transcript to Reader tab (optional feature)
+      const sendToReader = () => {
+        if (!podcastAudio?.description) {
+          showToast('No transcript available for this episode');
+          return;
+        }
+
+        // Strip HTML tags from description
+        const cleanText = podcastAudio.description.replace(/<[^>]*>/g, '').trim();
+
+        if (cleanText.length < 50) {
+          showToast('Episode description too short to read');
+          return;
+        }
+
+        // Create article source from podcast description
+        addSource({
+          type: 'article',
+          title: `${podcastAudio.title} - Transcript`,
+          url: url,
+          content: cleanText
+        });
+
+        showToast('Sent to Reader tab');
+        setActiveTab('reader');
       };
 
       // Wake Lock helpers to keep screen on during playback
@@ -4352,6 +4384,16 @@
                      isTranscribing ? 'Processing...' :
                      <><Icons.Mic /> Voice</>}
                   </button>
+                  {podcastAudio?.description && (
+                    <button
+                      className="note-btn"
+                      onClick={sendToReader}
+                      title="Send episode description to Reader"
+                      style={{ marginLeft: '0.5rem' }}
+                    >
+                      <Icons.Book /> Read
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
