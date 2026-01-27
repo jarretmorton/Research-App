@@ -3243,7 +3243,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="input-section" style={{ display: (carMode || showTextNote) ? 'none' : 'block' }}>
+          <div className="input-section" style={{ display: carMode ? 'none' : 'block' }}>
             <div className="input-group">
               <input
                 type="text"
@@ -4377,7 +4377,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="input-section" style={{ display: (carMode || showTextNote) ? 'none' : 'block' }}>
+          <div className="input-section" style={{ display: carMode ? 'none' : 'block' }}>
             <div className="input-group">
               <input
                 type="text"
