@@ -4514,6 +4514,9 @@
                 </div>
               </div>
 
+              {/* Spacer to allow flex shrinking when text note appears */}
+              <div style={{ flex: 1, minHeight: 0 }} />
+
               <audio
                 ref={audioPlayerRef}
                 src={podcastAudio.audioUrl}
