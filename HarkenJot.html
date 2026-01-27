@@ -3516,13 +3516,14 @@
           setTimeout(() => {
             if (window.YT && window.YT.Player) {
               initPlayer(currentSource.videoId);
-              // Restore saved position after player is ready
+              // Restore saved position after player is ready (without auto-playing)
               setTimeout(() => {
                 if (playerRef.current) {
                   const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
                   const savedPosition = savedPositions[currentSource.id];
                   if (savedPosition) {
                     playerRef.current.seekTo(savedPosition, true);
+                    playerRef.current.pauseVideo(); // Don't auto-play, just cue up
                   }
                 }
               }, 500);
