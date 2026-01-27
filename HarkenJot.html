@@ -2043,7 +2043,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.50</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.51</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2618,6 +2618,7 @@
                 sentences: sentences,
                 url: url
               });
+              setUrl(''); // Clear URL after successful load
               showToast('PDF loaded successfully!');
               setLoading(false);
               return;
@@ -2707,6 +2708,7 @@
             url: url
           });
 
+          setUrl(''); // Clear URL after successful load
           showToast('Article loaded successfully!');
 
         } catch (error) {
@@ -2737,7 +2739,8 @@
           sentences: sentences,
           url: url
         });
-        
+
+        setUrl(''); // Clear URL after successful load
         setShowManualInput(false);
         setManualContent('');
       };
@@ -3240,7 +3243,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="input-section" style={{ display: carMode ? 'none' : 'block' }}>
+          <div className="input-section" style={{ display: (carMode || showTextNote) ? 'none' : 'block' }}>
             <div className="input-group">
               <input
                 type="text"
@@ -3470,6 +3473,7 @@
       const [isTranscribing, setIsTranscribing] = useState(false);
       const [showTextNote, setShowTextNote] = useState(false);
       const [textNote, setTextNote] = useState('');
+      const [speed, setSpeed] = useState(1);
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -3552,6 +3556,16 @@
           firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
         }
       }, []);
+
+      // Apply playback speed to YouTube and audio players
+      useEffect(() => {
+        if (playerRef.current && playerRef.current.setPlaybackRate) {
+          playerRef.current.setPlaybackRate(speed);
+        }
+        if (audioPlayerRef.current) {
+          audioPlayerRef.current.playbackRate = speed;
+        }
+      }, [speed]);
 
       // Save position whenever it changes (for both YouTube and podcast)
       useEffect(() => {
@@ -3822,6 +3836,7 @@
             link: episode.link || url
           });
 
+          setUrl(''); // Clear URL after successful load
           showToast('Podcast loaded!');
         } catch (error) {
           console.error('Podcast loading error:', error);
@@ -3864,6 +3879,7 @@
             link: episode.link || feedUrl
           });
 
+          setUrl(''); // Clear URL after successful load
           showToast('Podcast loaded!');
         } catch (error) {
           showToast('Failed to load RSS feed');
@@ -3892,6 +3908,8 @@
             videoId: id
           });
 
+          setUrl(''); // Clear URL after successful load
+
           // Initialize player after state update
           setTimeout(() => {
             if (window.YT && window.YT.Player) {
@@ -3918,6 +3936,7 @@
             url: url,
             audioUrl: url
           });
+          setUrl(''); // Clear URL after successful load
           showToast('Audio loaded');
         } else {
           showToast('Please enter a YouTube, Spotify, or RSS feed URL');
@@ -4358,7 +4377,7 @@
 
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <div className="input-section" style={{ display: carMode ? 'none' : 'block' }}>
+          <div className="input-section" style={{ display: (carMode || showTextNote) ? 'none' : 'block' }}>
             <div className="input-group">
               <input
                 type="text"
@@ -4431,6 +4450,18 @@
                         <span>{formatTime(duration)}</span>
                       </div>
                     </div>
+
+                    <div className={`speed-control ${carMode ? 'car-mode' : ''}`}>
+                      <label>Speed</label>
+                      <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1">1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
@@ -4464,8 +4495,8 @@
             </div>
           ) : podcastAudio ? (
             <div className="reader-container">
-              <div className="reader-header" style={{ display: carMode ? 'none' : 'flex' }}>
-                {podcastAudio.artworkUrl && (
+              <div className="reader-header">
+                {podcastAudio.artworkUrl && !carMode && (
                   <img
                     src={podcastAudio.artworkUrl}
                     alt="Podcast artwork"
@@ -4482,18 +4513,6 @@
                   </div>
                 </div>
               </div>
-
-              {carMode && (
-                <div style={{ padding: '1rem', textAlign: 'center' }}>
-                  <h3 style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>{podcastAudio.title}</h3>
-                  <div className="source-meta" style={{ justifyContent: 'center' }}>
-                    <span className="library-item-type podcast">Podcast</span>
-                    {podcastAudio.showName && <span>{podcastAudio.showName}</span>}
-                    <span>{formatTime(duration)}</span>
-                    {podcastAudio.link && <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
-                  </div>
-                </div>
-              )}
 
               <audio
                 ref={audioPlayerRef}
@@ -4577,6 +4596,18 @@
                         <span>{formatTime(currentTime)}</span>
                         <span>{formatTime(duration)}</span>
                       </div>
+                    </div>
+
+                    <div className={`speed-control ${carMode ? 'car-mode' : ''}`}>
+                      <label>Speed</label>
+                      <select value={speed} onChange={(e) => setSpeed(parseFloat(e.target.value))}>
+                        <option value="0.5">0.5x</option>
+                        <option value="0.75">0.75x</option>
+                        <option value="1">1x</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="2">2x</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -4680,11 +4711,19 @@
       };
 
       const exportLibrary = () => {
+        // Include saved positions for articles/PDFs and media
+        const readerPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
+        const mediaPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+
         const exportData = {
-          version: 1,
+          version: 2,
           exportedAt: new Date().toISOString(),
           sources: sources,
-          notes: notes
+          notes: notes,
+          positions: {
+            reader: readerPositions,
+            media: mediaPositions
+          }
         };
 
         const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
@@ -4723,6 +4762,17 @@
 
               setSources(data.sources);
               setNotes(data.notes);
+
+              // Restore saved positions if available (version 2+)
+              if (data.positions) {
+                if (data.positions.reader) {
+                  localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
+                }
+                if (data.positions.media) {
+                  localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
+                }
+              }
+
               showToast(`Imported ${data.sources.length} sources and ${data.notes.length} notes`);
             } catch (err) {
               showToast('Failed to import library');
