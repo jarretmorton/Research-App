@@ -4514,8 +4514,8 @@
                 </div>
               </div>
 
-              {/* Spacer to allow flex shrinking when text note appears */}
-              <div style={{ flex: 1, minHeight: 0 }} />
+              {/* Spacer to allow flex shrinking when text note appears - hidden in car mode */}
+              <div style={{ flex: 1, minHeight: 0, display: carMode ? 'none' : 'block' }} />
 
               <audio
                 ref={audioPlayerRef}
