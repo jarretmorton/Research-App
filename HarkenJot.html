@@ -3929,24 +3929,27 @@
           setVideoId(id);
           setPodcastAudio(null);
 
-          // Fetch YouTube title via oEmbed API
+          // Fetch YouTube title and channel via oEmbed API
           let videoTitle = 'YouTube Video';
+          let channelName = '';
           try {
             const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
             const response = await fetch(oembedUrl);
             if (response.ok) {
               const data = await response.json();
               videoTitle = data.title || 'YouTube Video';
+              channelName = data.author_name || '';
             }
           } catch (err) {
-            console.log('Could not fetch YouTube title:', err);
+            console.log('Could not fetch YouTube metadata:', err);
           }
 
           addSource({
             type: 'youtube',
             title: videoTitle,
             url: url,
-            videoId: id
+            videoId: id,
+            channelName: channelName
           });
 
           setUrl(''); // Clear URL after successful load
@@ -4440,6 +4443,19 @@
 
           {videoId ? (
             <div className="media-container">
+              {!carMode && currentSource && (
+                <div className="reader-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                  <div className="source-info">
+                    <h2>{currentSource.title || 'YouTube Video'}</h2>
+                    <div className="source-meta">
+                      <span className="library-item-type youtube">YouTube</span>
+                      {currentSource.channelName && <span>{currentSource.channelName}</span>}
+                      {duration > 0 && <span>{formatTime(duration)}</span>}
+                      {currentSource.url && <a href={currentSource.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="youtube-container" style={{ display: carMode ? 'none' : 'block' }}>
                 <div id="youtube-player"></div>
               </div>
@@ -4895,7 +4911,8 @@
                       <div className="library-item-meta">
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
                         {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
-                        {source.type !== 'podcast' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
+                        {source.type === 'youtube' && source.channelName && <span>{source.channelName}</span>}
+                        {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
                         {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
                         {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
                         {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
