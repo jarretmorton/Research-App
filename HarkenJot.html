@@ -4382,7 +4382,7 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste YouTube, Spotify, or RSS link..."
+                placeholder="Paste YouTube or podcast link..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -4651,9 +4651,9 @@
             </div>
           ) : (
             <div className="empty-state">
-              <div className="empty-state-icon">🎧</div>
+              <div className="empty-state-icon">🎙️</div>
               <h3>Media Player</h3>
-              <p>Paste a YouTube, Spotify, or RSS link above to begin. The app will play it and let you add notes while you listen.</p>
+              <p>Paste a YouTube, Spotify, or podcast RSS link above to begin. The app will play it and let you add notes while you listen.</p>
             </div>
           )}
         </div>
@@ -4798,10 +4798,10 @@
           </div>
 
           {sources.length === 0 ? (
-            <div className="empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div className="empty-state">
               <div className="empty-state-icon">📚</div>
               <h3>Library Empty</h3>
-              <p>Your sources and notes will appear here. Start by adding an article or video from the Reader or Media tabs.</p>
+              <p>Your sources and notes will appear here. Start by adding an article or podcast in the Reader or Player tabs.</p>
             </div>
           ) : (
             <div className="library-grid" style={{ flex: 1, overflow: 'auto' }}>
