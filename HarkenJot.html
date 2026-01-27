@@ -2043,7 +2043,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.51</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.52</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3509,6 +3509,16 @@
           setTimeout(() => {
             if (window.YT && window.YT.Player) {
               initPlayer(currentSource.videoId);
+              // Restore saved position after player is ready
+              setTimeout(() => {
+                if (playerRef.current) {
+                  const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+                  const savedPosition = savedPositions[currentSource.id];
+                  if (savedPosition) {
+                    playerRef.current.seekTo(savedPosition, true);
+                  }
+                }
+              }, 500);
             }
           }, 100);
         } else if (currentSource && currentSource.type === 'podcast' && currentSource.audioUrl) {
@@ -3888,7 +3898,7 @@
         setIsLoadingPodcast(false);
       };
 
-      const loadMedia = () => {
+      const loadMedia = async () => {
         const urlType = detectUrlType(url);
 
         if (urlType === 'youtube') {
@@ -3901,9 +3911,22 @@
           setVideoId(id);
           setPodcastAudio(null);
 
+          // Fetch YouTube title via oEmbed API
+          let videoTitle = 'YouTube Video';
+          try {
+            const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+            const response = await fetch(oembedUrl);
+            if (response.ok) {
+              const data = await response.json();
+              videoTitle = data.title || 'YouTube Video';
+            }
+          } catch (err) {
+            console.log('Could not fetch YouTube title:', err);
+          }
+
           addSource({
             type: 'youtube',
-            title: 'YouTube Video',
+            title: videoTitle,
             url: url,
             videoId: id
           });
@@ -4069,7 +4092,12 @@
           },
           events: {
             onReady: (event) => {
-              setDuration(event.target.getDuration());
+              const dur = event.target.getDuration();
+              setDuration(dur);
+              // Update source with duration for Library display
+              if (currentSource?.id && dur && isFinite(dur)) {
+                updateSource(currentSource.id, { duration: dur });
+              }
             },
             onStateChange: (event) => {
               setIsPlaying(event.data === window.YT.PlayerState.PLAYING);
@@ -4850,7 +4878,7 @@
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
                         {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
                         {source.type !== 'podcast' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
-                        {source.type === 'podcast' && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
+                        {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
                         {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
                         {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
                       </div>
