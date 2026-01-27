@@ -1079,10 +1079,16 @@
       box-shadow: 0 2px 12px var(--shadow);
       cursor: pointer;
       transition: all 0.2s ease;
-      display: grid;
-      grid-template-columns: 1fr auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .library-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
       gap: 0.75rem;
-      align-items: start;
     }
 
     .library-item:hover {
@@ -1104,6 +1110,16 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
+    }
+
+    .library-item-meta a {
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+    }
+
+    .library-item-meta a:hover {
+      color: var(--accent-hover);
     }
 
     .library-item-type {
@@ -1907,6 +1923,11 @@
         return newSource;
       };
 
+      const updateSource = (sourceId, updates) => {
+        setSources(prev => prev.map(s => s.id === sourceId ? { ...s, ...updates } : s));
+        setCurrentSource(prev => prev?.id === sourceId ? { ...prev, ...updates } : prev);
+      };
+
       const addNote = (note) => {
         const newNote = { ...note, id: generateId(), createdAt: new Date().toISOString() };
         setNotes(prev => [newNote, ...prev]);
@@ -2022,7 +2043,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.49</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.50</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2095,6 +2116,7 @@
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
                   addSource={addSource}
+                  updateSource={updateSource}
                   addNote={addNote}
                   notes={currentNotes}
                   showToast={showToast}
@@ -3435,7 +3457,7 @@
     });
 
     // Media View Component
-    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, setActiveTab, carMode, setCarMode, isMobileDevice }, ref) => {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, showToast, setActiveTab, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
@@ -4477,7 +4499,14 @@
                 ref={audioPlayerRef}
                 src={podcastAudio.audioUrl}
                 onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-                onDurationChange={(e) => setDuration(e.target.duration)}
+                onDurationChange={(e) => {
+                  const dur = e.target.duration;
+                  setDuration(dur);
+                  // Update source with duration for Library display
+                  if (currentSource?.id && dur && isFinite(dur)) {
+                    updateSource(currentSource.id, { duration: dur });
+                  }
+                }}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 style={{ display: 'none' }}
@@ -4735,42 +4764,42 @@
                       className="library-item"
                       onClick={() => setCurrentSource(source)}
                     >
-                      <div>
+                      <div className="library-item-top">
                         <div className="library-item-title">{source.title}</div>
-                        <div className="library-item-meta">
-                          <span className={`library-item-type ${source.type}`}>{source.type}</span>
-                          {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
-                          {source.type !== 'podcast' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
-                          {source.type === 'podcast' && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
-                          {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
-                          {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                          <div
+                            className="note-count"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openSourceWithNotes(source);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            title="Open source and view notes"
+                          >
+                            <Icons.Pencil />
+                            {getNotesForSource(source.id).length} notes
+                          </div>
+                          <button
+                            className="note-action-btn delete"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm('Delete this item and all its notes?')) {
+                                deleteSource(source.id);
+                              }
+                            }}
+                            title="Delete item"
+                          >
+                            <Icons.Trash />
+                          </button>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <div
-                          className="note-count"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openSourceWithNotes(source);
-                          }}
-                          style={{ cursor: 'pointer' }}
-                          title="Open source and view notes"
-                        >
-                          <Icons.Pencil />
-                          {getNotesForSource(source.id).length} notes
-                        </div>
-                        <button
-                          className="note-action-btn delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm('Delete this item and all its notes?')) {
-                              deleteSource(source.id);
-                            }
-                          }}
-                          title="Delete item"
-                        >
-                          <Icons.Trash />
-                        </button>
+                      <div className="library-item-meta">
+                        <span className={`library-item-type ${source.type}`}>{source.type}</span>
+                        {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
+                        {source.type !== 'podcast' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
+                        {source.type === 'podcast' && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
+                        {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
+                        {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
                       </div>
                     </div>
                   ))}
