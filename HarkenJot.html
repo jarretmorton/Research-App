@@ -3481,6 +3481,7 @@
       const audioChunksRef = useRef([]);
       const intervalRef = useRef(null);
       const isStartingRecordingRef = useRef(false);
+      const lastInitializedSourceRef = useRef(null); // Track last initialized source to prevent re-init loops
       const wasPlayingRef = useRef(false);
 
       // Expose seekTo method to parent
@@ -3502,6 +3503,12 @@
       // Load currentSource into player when source is selected from library
       useEffect(() => {
         if (currentSource && currentSource.type === 'youtube' && currentSource.videoId) {
+          // Skip if we already initialized for this source (prevents loop when updateSource updates currentSource)
+          if (lastInitializedSourceRef.current === currentSource.id) {
+            return;
+          }
+          lastInitializedSourceRef.current = currentSource.id;
+
           setVideoId(currentSource.videoId);
           setPodcastAudio(null);
           // Don't set URL - keep input clear after loading
@@ -3522,6 +3529,12 @@
             }
           }, 100);
         } else if (currentSource && currentSource.type === 'podcast' && currentSource.audioUrl) {
+          // Skip if we already initialized for this source (prevents loop when updateSource updates currentSource)
+          if (lastInitializedSourceRef.current === currentSource.id) {
+            return;
+          }
+          lastInitializedSourceRef.current = currentSource.id;
+
           setVideoId(null);
           setPodcastAudio({
             audioUrl: currentSource.audioUrl,
@@ -3542,6 +3555,9 @@
               }
             }
           }, 500);
+        } else {
+          // Reset the ref when switching to a different type or no source
+          lastInitializedSourceRef.current = null;
         }
       }, [currentSource]);
 
