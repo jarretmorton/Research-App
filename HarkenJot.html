@@ -1164,7 +1164,7 @@
 
     .youtube-container {
       flex: 1;
-      min-height: 200px;
+      min-height: 0;
       background: #000;
       position: relative;
     }
@@ -3504,7 +3504,7 @@
         if (currentSource && currentSource.type === 'youtube' && currentSource.videoId) {
           setVideoId(currentSource.videoId);
           setPodcastAudio(null);
-          setUrl(currentSource.url);
+          // Don't set URL - keep input clear after loading
           // Initialize player after state update
           setTimeout(() => {
             if (window.YT && window.YT.Player) {
@@ -3521,7 +3521,7 @@
             hasTranscript: currentSource.hasTranscript || false,
             link: currentSource.link || currentSource.url
           });
-          setUrl(currentSource.url);
+          // Don't set URL - keep input clear after loading
           // Restore saved position after audio loads
           setTimeout(() => {
             if (audioPlayerRef.current) {
