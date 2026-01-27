@@ -3524,6 +3524,7 @@
                   if (savedPosition) {
                     playerRef.current.seekTo(savedPosition, true);
                     playerRef.current.pauseVideo(); // Don't auto-play, just cue up
+                    setCurrentTime(savedPosition); // Update progress bar immediately
                   }
                 }
               }, 500);
