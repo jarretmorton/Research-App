@@ -4444,7 +4444,7 @@
           {videoId ? (
             <div className="media-container">
               {!carMode && currentSource && (
-                <div className="reader-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                <div className="reader-header">
                   <div className="source-info">
                     <h2>{currentSource.title || 'YouTube Video'}</h2>
                     <div className="source-meta">
@@ -4456,7 +4456,7 @@
                   </div>
                 </div>
               )}
-              <div className="youtube-container" style={{ display: carMode ? 'none' : 'block' }}>
+              <div className="youtube-container" style={carMode ? { position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' } : {}}>
                 <div id="youtube-player"></div>
               </div>
 
