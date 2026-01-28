@@ -2043,7 +2043,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.53</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.54</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4444,7 +4444,7 @@
           {videoId ? (
             <div className="media-container">
               {!carMode && currentSource && (
-                <div className="reader-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                <div className="reader-header">
                   <div className="source-info">
                     <h2>{currentSource.title || 'YouTube Video'}</h2>
                     <div className="source-meta">
@@ -4456,7 +4456,7 @@
                   </div>
                 </div>
               )}
-              <div className="youtube-container" style={{ display: carMode ? 'none' : 'block' }}>
+              <div className="youtube-container" style={carMode ? { position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' } : {}}>
                 <div id="youtube-player"></div>
               </div>
 
