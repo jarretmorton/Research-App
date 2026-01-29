@@ -2046,7 +2046,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.57</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.58</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4398,8 +4398,8 @@
           </div>
 
           {videoId ? (
-            <div className="media-container">
-              {currentSource && (
+            <div className="media-container" style={carMode ? { marginTop: '-1rem' } : {}}>
+              {!carMode && currentSource && (
                 <div className="reader-header">
                   <div className="source-info">
                     <h2>{currentSource.title || 'YouTube Video'}</h2>
@@ -4415,9 +4415,6 @@
               <div className="youtube-container" style={carMode ? { position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' } : {}}>
                 <div id="youtube-player"></div>
               </div>
-
-              {/* Spacer to fill space in car mode */}
-              {carMode && <div style={{ flex: 1 }} />}
 
               {showTextNote && (
                 <div className="text-note-container">
@@ -4523,7 +4520,7 @@
               </div>
             </div>
           ) : podcastAudio ? (
-            <div className="reader-container">
+            <div className="reader-container" style={carMode ? { marginTop: '-1rem' } : {}}>
               <div className="reader-header">
                 {podcastAudio.artworkUrl && !carMode && (
                   <img
