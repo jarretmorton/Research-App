@@ -2043,7 +2043,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.55</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.56</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3467,7 +3467,7 @@
       const [duration, setDuration] = useState(0);
       const [isRecording, setIsRecording] = useState(false);
       const [videoId, setVideoId] = useState(null);
-      const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName, artworkUrl, transcript, hasTranscript, link }
+      const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName, artworkUrl, link }
       const [isLoadingPodcast, setIsLoadingPodcast] = useState(false);
       const [whisperReady, setWhisperReady] = useState(false);
       const [isTranscribing, setIsTranscribing] = useState(false);
@@ -3542,8 +3542,6 @@
             audioUrl: currentSource.audioUrl,
             title: currentSource.title,
             showName: currentSource.showName || '',
-            transcript: currentSource.transcript || '',
-            hasTranscript: currentSource.hasTranscript || false,
             link: currentSource.link || currentSource.url
           });
           // Don't set URL - keep input clear after loading
@@ -3755,33 +3753,12 @@
               if (score > bestScore || (score === bestScore && !bestMatch)) {
                 bestScore = score;
 
-                // Look for transcript in various RSS fields
                 const description = item.querySelector('description')?.textContent || '';
-                const contentEncoded = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
-                const transcriptEl = item.getElementsByTagName('podcast:transcript')[0];
-                const transcriptUrl = transcriptEl?.getAttribute('url') || '';
-
-                // Check if content:encoded has substantial content (likely transcript)
-                // or if there's a dedicated transcript element
-                let transcript = '';
-                let hasTranscript = false;
-
-                // content:encoded often has full transcript/show notes
-                if (contentEncoded.length > 1500) {
-                  transcript = contentEncoded;
-                  hasTranscript = true;
-                } else if (transcriptUrl) {
-                  // Has podcast:transcript tag - could fetch it but mark as available
-                  hasTranscript = true;
-                  transcript = ''; // Would need separate fetch
-                }
 
                 bestMatch = {
                   title: title,
                   audioUrl: audioUrl,
                   description: description,
-                  transcript: transcript,
-                  hasTranscript: hasTranscript,
                   pubDate: item.querySelector('pubDate')?.textContent || '',
                   link: item.querySelector('link')?.textContent || ''
                 };
@@ -3795,21 +3772,11 @@
             const enclosure = firstItem.querySelector('enclosure');
             if (enclosure?.getAttribute('url')) {
               const description = firstItem.querySelector('description')?.textContent || '';
-              const contentEncoded = firstItem.getElementsByTagName('content:encoded')[0]?.textContent || '';
-
-              let transcript = '';
-              let hasTranscript = false;
-              if (contentEncoded.length > 1500) {
-                transcript = contentEncoded;
-                hasTranscript = true;
-              }
 
               bestMatch = {
                 title: firstItem.querySelector('title')?.textContent || 'Unknown Episode',
                 audioUrl: enclosure.getAttribute('url'),
                 description: description,
-                transcript: transcript,
-                hasTranscript: hasTranscript,
                 pubDate: firstItem.querySelector('pubDate')?.textContent || '',
                 link: firstItem.querySelector('link')?.textContent || ''
               };
@@ -3864,8 +3831,6 @@
             title: episode.title,
             showName: rssInfo.podcastName,
             artworkUrl: rssInfo.artworkUrl,
-            transcript: episode.transcript,
-            hasTranscript: episode.hasTranscript,
             link: episode.link || url
           });
 
@@ -3875,8 +3840,6 @@
             url: url,
             audioUrl: episode.audioUrl,
             showName: rssInfo.podcastName,
-            transcript: episode.transcript,
-            hasTranscript: episode.hasTranscript,
             link: episode.link || url
           });
 
@@ -3908,8 +3871,6 @@
             audioUrl: episode.audioUrl,
             title: episode.title,
             showName: 'Podcast',
-            transcript: episode.transcript,
-            hasTranscript: episode.hasTranscript,
             link: episode.link || feedUrl
           });
 
@@ -3918,8 +3879,6 @@
             title: episode.title,
             url: feedUrl,
             audioUrl: episode.audioUrl,
-            transcript: episode.transcript,
-            hasTranscript: episode.hasTranscript,
             link: episode.link || feedUrl
           });
 
@@ -4001,33 +3960,6 @@
         } else {
           showToast('Please enter a YouTube, Spotify, or RSS feed URL');
         }
-      };
-
-      // Send podcast transcript to Reader tab (only when full transcript available)
-      const sendToReader = () => {
-        if (!podcastAudio?.hasTranscript || !podcastAudio?.transcript) {
-          showToast('No transcript available for this episode');
-          return;
-        }
-
-        // Strip HTML tags from transcript
-        const cleanText = podcastAudio.transcript.replace(/<[^>]*>/g, '').trim();
-
-        if (cleanText.length < 100) {
-          showToast('Transcript too short');
-          return;
-        }
-
-        // Create article source from podcast transcript
-        addSource({
-          type: 'article',
-          title: `${podcastAudio.title} - Transcript`,
-          url: podcastAudio.link || url,
-          content: cleanText
-        });
-
-        showToast('Sent to Reader tab');
-        setActiveTab('reader');
       };
 
       // Text note functions
@@ -4564,6 +4496,14 @@
                   >
                     <Icons.Keyboard /> Type
                   </button>
+                  <button
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
+                    disabled={true}
+                    title="Search not available for YouTube"
+                    style={{ opacity: 0.5 }}
+                  >
+                    <Icons.Search /> Search
+                  </button>
                   {isMobileDevice && (
                     <button
                       className={`note-btn ${carMode ? 'car-mode active' : ''}`}
@@ -4716,12 +4656,11 @@
                   </button>
                   <button
                     className={`note-btn ${carMode ? 'car-mode' : ''}`}
-                    onClick={sendToReader}
-                    disabled={!podcastAudio?.hasTranscript}
-                    title={podcastAudio?.hasTranscript ? "Send transcript to Reader" : "No transcript available"}
-                    style={{ opacity: podcastAudio?.hasTranscript ? 1 : 0.5 }}
+                    disabled={true}
+                    title="Search not available for podcasts"
+                    style={{ opacity: 0.5 }}
                   >
-                    <Icons.Book /> Read
+                    <Icons.Search /> Search
                   </button>
                   {isMobileDevice && (
                     <button
