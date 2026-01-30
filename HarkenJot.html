@@ -2046,7 +2046,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.61</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.62</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2105,6 +2105,7 @@
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
                   addSource={addSource}
+                  updateSource={updateSource}
                   addNote={addNote}
                   notes={currentNotes}
                   showToast={showToast}
@@ -2171,7 +2172,7 @@
     }
 
     // Reader View Component
-    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, addNote, notes, showToast, carMode, setCarMode, isMobileDevice }, ref) => {
+    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, showToast, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
       const [loading, setLoading] = useState(false);
       const [content, setContent] = useState(null);
@@ -2413,6 +2414,9 @@
           } else {
             setCurrentSentenceIndex(0);
           }
+
+          // Load saved speed for this source
+          setSpeed(currentSource.speed || 1);
         }
       }, [currentSource]);
 
@@ -2888,6 +2892,13 @@
         }
         prevSpeedRef.current = speed;
       }, [speed, isPlaying, currentSentenceIndex]);
+
+      // Save speed to source when it changes
+      useEffect(() => {
+        if (currentSource?.id && speed !== 1) {
+          updateSource(currentSource.id, { speed: speed });
+        }
+      }, [speed, currentSource?.id]);
 
       const streamRef = useRef(null);
       const audioContextRef = useRef(null);
@@ -3514,6 +3525,7 @@
 
           setVideoId(currentSource.videoId);
           setPodcastAudio(null);
+          setSpeed(currentSource.speed || 1);
           // Don't set URL - keep input clear after loading
           // Initialize player after state update
           setTimeout(() => {
@@ -3548,6 +3560,7 @@
             artworkUrl: currentSource.artworkUrl || '',
             link: currentSource.link || currentSource.url
           });
+          setSpeed(currentSource.speed || 1);
           // Don't set URL - keep input clear after loading
           // Restore saved position after audio loads
           setTimeout(() => {
@@ -3596,6 +3609,13 @@
           audioPlayerRef.current.playbackRate = speed;
         }
       }, [speed]);
+
+      // Save speed to source when it changes
+      useEffect(() => {
+        if (currentSource?.id && speed !== 1) {
+          updateSource(currentSource.id, { speed: speed });
+        }
+      }, [speed, currentSource?.id]);
 
       // Save position whenever it changes (for both YouTube and podcast)
       useEffect(() => {
@@ -4727,14 +4747,16 @@
         Object.entries(groupedSources).forEach(([date, dateSources]) => {
           dateSources.forEach(source => {
             const sourceNotes = getNotesForSource(source.id);
-            if (sourceNotes.length > 0) {
-              // Add blank line between sources (except before first)
-              if (!firstSource) {
-                exportText += '\n';
-              }
-              firstSource = false;
 
-              exportText += `${source.title} (${source.url || source.link || ''})\n`;
+            // Add blank line between sources (except before first)
+            if (!firstSource) {
+              exportText += '\n';
+            }
+            firstSource = false;
+
+            exportText += `${source.title} (${source.url || source.link || ''})\n`;
+
+            if (sourceNotes.length > 0) {
               exportText += 'Notes:\n';
               sourceNotes.forEach(note => {
                 let notePrefix = '';
@@ -4773,7 +4795,9 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `harkenjot-library-${new Date().toISOString().split('T')[0]}.json`;
+        const now = new Date();
+        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        a.download = `harkenjot-library-${localDate}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
