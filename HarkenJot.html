@@ -1164,6 +1164,7 @@
       background: white;
       color: transparent;
       flex-shrink: 0;
+      align-self: flex-start;
     }
 
     .read-status.checked {
@@ -2080,7 +2081,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.62</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.63</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2180,6 +2181,7 @@
                   }}
                   deleteNote={deleteNote}
                   deleteSource={deleteSource}
+                  updateSource={updateSource}
                   setSources={setSources}
                   setNotes={setNotes}
                   showToast={showToast}
@@ -4800,7 +4802,7 @@
     });
 
     // Library View Component
-    function LibraryView({ sources, notes, setCurrentSource, openSourceWithNotes, deleteNote, deleteSource, setSources, setNotes, showToast }) {
+    function LibraryView({ sources, notes, setCurrentSource, openSourceWithNotes, deleteNote, deleteSource, updateSource, setSources, setNotes, showToast }) {
       const groupedSources = sources.reduce((acc, source) => {
         const date = new Date(source.createdAt).toDateString();
         if (!acc[date]) acc[date] = [];
@@ -4961,8 +4963,12 @@
                         <div className="library-item-title">{source.title}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
                           <div
-                            className={`read-status ${source.isRead ? 'checked' : ''}`}
-                            title={source.isRead ? 'Read' : 'Unread'}
+                            className={`read-status clickable ${source.isRead ? 'checked' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateSource(source.id, { isRead: !source.isRead });
+                            }}
+                            title={source.isRead ? 'Mark as unread' : 'Mark as read'}
                           >
                             {source.isRead && <Icons.Check />}
                           </div>
