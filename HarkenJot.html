@@ -2046,7 +2046,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.59</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.60</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3545,6 +3545,7 @@
             audioUrl: currentSource.audioUrl,
             title: currentSource.title,
             showName: currentSource.showName || '',
+            artworkUrl: currentSource.artworkUrl || '',
             link: currentSource.link || currentSource.url
           });
           // Don't set URL - keep input clear after loading
@@ -3723,6 +3724,12 @@
           const xml = parser.parseFromString(xmlText, 'text/xml');
           const items = xml.querySelectorAll('item');
 
+          // Extract channel artwork
+          const channel = xml.querySelector('channel');
+          const itunesImage = channel?.getElementsByTagName('itunes:image')[0];
+          const channelArtwork = itunesImage?.getAttribute('href') ||
+                                 channel?.querySelector('image url')?.textContent || '';
+
           // Try to find matching episode by title
           let bestMatch = null;
           let bestScore = 0;
@@ -3762,6 +3769,7 @@
                   title: title,
                   audioUrl: audioUrl,
                   description: description,
+                  artworkUrl: channelArtwork,
                   pubDate: item.querySelector('pubDate')?.textContent || '',
                   link: item.querySelector('link')?.textContent || ''
                 };
@@ -3780,6 +3788,7 @@
                 title: firstItem.querySelector('title')?.textContent || 'Unknown Episode',
                 audioUrl: enclosure.getAttribute('url'),
                 description: description,
+                artworkUrl: channelArtwork,
                 pubDate: firstItem.querySelector('pubDate')?.textContent || '',
                 link: firstItem.querySelector('link')?.textContent || ''
               };
@@ -3843,6 +3852,7 @@
             url: url,
             audioUrl: episode.audioUrl,
             showName: rssInfo.podcastName,
+            artworkUrl: rssInfo.artworkUrl,
             link: episode.link || url
           });
 
@@ -3874,6 +3884,7 @@
             audioUrl: episode.audioUrl,
             title: episode.title,
             showName: 'Podcast',
+            artworkUrl: episode.artworkUrl || '',
             link: episode.link || feedUrl
           });
 
@@ -3882,6 +3893,7 @@
             title: episode.title,
             url: feedUrl,
             audioUrl: episode.audioUrl,
+            artworkUrl: episode.artworkUrl || '',
             link: episode.link || feedUrl
           });
 
