@@ -2081,7 +2081,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.63</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.64</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3336,8 +3336,20 @@
           {content ? (
             <div className="reader-container">
               <div className="reader-header">
-                <div className="source-info">
-                  <h2>{content.title}</h2>
+                <div className="source-info" style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+                    <h2>{content.title}</h2>
+                    {currentSource && (
+                      <div
+                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
+                        onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
+                        title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
+                        style={{ marginTop: '0.25rem' }}
+                      >
+                        {currentSource.isRead && <Icons.Check />}
+                      </div>
+                    )}
+                  </div>
                   <div className="source-meta">
                     <span className={`library-item-type ${currentSource?.type || 'article'}`}>{currentSource?.type || 'Article'}</span>
                     {content.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(content.url).hostname}</span>}
@@ -3345,15 +3357,6 @@
                     {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
                 </div>
-                {currentSource && (
-                  <div
-                    className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
-                    onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
-                    title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
-                  >
-                    {currentSource.isRead && <Icons.Check />}
-                  </div>
-                )}
               </div>
               
               <div className="reader-body" ref={readerContainerRef} style={{ display: carMode ? 'none' : 'block' }}>
@@ -4489,21 +4492,24 @@
             <div className="media-container">
               {currentSource && (
                 <div className="reader-header">
-                  <div className="source-info">
-                    <h2>{currentSource.title || 'YouTube Video'}</h2>
+                  <div className="source-info" style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+                      <h2>{currentSource.title || 'YouTube Video'}</h2>
+                      <div
+                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
+                        onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
+                        title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
+                        style={{ marginTop: '0.25rem' }}
+                      >
+                        {currentSource.isRead && <Icons.Check />}
+                      </div>
+                    </div>
                     <div className="source-meta">
                       <span className="library-item-type youtube">YouTube</span>
                       {currentSource.channelName && <span>{currentSource.channelName}</span>}
                       {duration > 0 && <span>{formatTime(duration)}</span>}
                       {currentSource.url && <a href={currentSource.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                     </div>
-                  </div>
-                  <div
-                    className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
-                    onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
-                    title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
-                  >
-                    {currentSource.isRead && <Icons.Check />}
                   </div>
                 </div>
               )}
@@ -4617,8 +4623,20 @@
           ) : podcastAudio ? (
             <div className="reader-container">
               <div className="reader-header">
-                <div className="source-info">
-                  <h2>{podcastAudio.title}</h2>
+                <div className="source-info" style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+                    <h2>{podcastAudio.title}</h2>
+                    {currentSource && (
+                      <div
+                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
+                        onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
+                        title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
+                        style={{ marginTop: '0.25rem' }}
+                      >
+                        {currentSource.isRead && <Icons.Check />}
+                      </div>
+                    )}
+                  </div>
                   <div className="source-meta">
                     <span className="library-item-type podcast">Podcast</span>
                     {podcastAudio.showName && <span>{podcastAudio.showName}</span>}
@@ -4626,15 +4644,6 @@
                     {podcastAudio.link && <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
                 </div>
-                {currentSource && (
-                  <div
-                    className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
-                    onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
-                    title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
-                  >
-                    {currentSource.isRead && <Icons.Check />}
-                  </div>
-                )}
               </div>
 
               {podcastAudio.artworkUrl && !carMode && (
