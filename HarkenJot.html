@@ -2046,7 +2046,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.58</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.59</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4522,13 +4522,6 @@
           ) : podcastAudio ? (
             <div className="reader-container">
               <div className="reader-header">
-                {podcastAudio.artworkUrl && !carMode && (
-                  <img
-                    src={podcastAudio.artworkUrl}
-                    alt="Podcast artwork"
-                    style={{ width: '80px', height: '80px', borderRadius: '8px', marginRight: '1rem', flexShrink: 0 }}
-                  />
-                )}
                 <div className="source-info">
                   <h2>{podcastAudio.title}</h2>
                   <div className="source-meta">
@@ -4539,6 +4532,16 @@
                   </div>
                 </div>
               </div>
+
+              {podcastAudio.artworkUrl && !carMode && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem' }}>
+                  <img
+                    src={podcastAudio.artworkUrl}
+                    alt="Podcast artwork"
+                    style={{ width: '200px', height: '200px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                  />
+                </div>
+              )}
 
               {/* Spacer to allow flex shrinking when text note appears - hidden in car mode */}
               <div style={{ flex: 1, minHeight: 0, display: carMode ? 'none' : 'block' }} />
