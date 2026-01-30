@@ -4496,7 +4496,7 @@
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
                       <h2 style={{ flex: 1 }}>{currentSource.title || 'YouTube Video'}</h2>
                       <div
-                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`
+                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
                         onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
                         title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
                         style={{ marginTop: '0.25rem' }}
