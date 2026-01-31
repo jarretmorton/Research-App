@@ -2051,7 +2051,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.78</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.79</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3610,6 +3610,7 @@
       const [textNote, setTextNote] = useState('');
       const [speed, setSpeed] = useState(1);
       const [artworkFailed, setArtworkFailed] = useState(false);
+      const [isLoadingArtwork, setIsLoadingArtwork] = useState(false);
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -3860,6 +3861,47 @@
           console.error('RSS search error:', error);
           return null;
         }
+      };
+
+      // Fetch cover art for a podcast using iTunes search
+      const fetchCoverArt = async () => {
+        if (!podcastAudio) return;
+
+        setIsLoadingArtwork(true);
+        const searchTerm = podcastAudio.showName || podcastAudio.title;
+
+        try {
+          const searchQuery = encodeURIComponent(searchTerm);
+          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
+          if (!response.ok) throw new Error('iTunes search failed');
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+            const artworkUrl = data.results[0].artworkUrl600 || data.results[0].artworkUrl100;
+            if (artworkUrl) {
+              // Update local state
+              setPodcastAudio(prev => ({ ...prev, artworkUrl }));
+              setArtworkFailed(false);
+              // Update stored source
+              if (currentSource?.id) {
+                updateSource(currentSource.id, { artworkUrl });
+              }
+              showToast('Cover art loaded');
+            } else {
+              showToast('No cover art found');
+              setArtworkFailed(true);
+            }
+          } else {
+            showToast('Could not find podcast artwork');
+            setArtworkFailed(true);
+          }
+        } catch (error) {
+          console.error('Artwork fetch error:', error);
+          showToast('Failed to load cover art');
+          setArtworkFailed(true);
+        }
+
+        setIsLoadingArtwork(false);
       };
 
       // Parse RSS feed and find episode
@@ -4785,25 +4827,27 @@
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem' }}>
                   {(!podcastAudio.artworkUrl || artworkFailed) ? (
                     <button
-                      onClick={() => setArtworkFailed(false)}
+                      onClick={fetchCoverArt}
+                      disabled={isLoadingArtwork}
                       style={{
                         width: '200px',
                         height: '200px',
                         borderRadius: '12px',
                         border: '2px dashed var(--border)',
                         background: 'var(--bg-secondary)',
-                        cursor: 'pointer',
+                        cursor: isLoadingArtwork ? 'wait' : 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '0.5rem',
                         color: 'var(--text-muted)',
-                        fontSize: '0.875rem'
+                        fontSize: '0.875rem',
+                        opacity: isLoadingArtwork ? 0.7 : 1
                       }}
                     >
                       <Icons.Image />
-                      <span>Load Cover Art</span>
+                      <span>{isLoadingArtwork ? 'Loading...' : 'Load Cover Art'}</span>
                     </button>
                   ) : (
                     <img
