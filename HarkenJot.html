@@ -3208,9 +3208,9 @@
                 const avgAmplitude = sum / dataArray.length;
 
                 // Voice detected if there's energy in voice frequencies AND sufficient amplitude
-                // Higher thresholds to filter background noise and capture cleaner speech
-                const VOICE_ENERGY_THRESHOLD = 50; // Energy in voice frequency range (0-255)
-                const AMPLITUDE_THRESHOLD = 12; // Overall amplitude (0-127)
+                // These thresholds are more Google-like: higher and more selective
+                const VOICE_ENERGY_THRESHOLD = 30; // Energy in voice frequency range (0-255)
+                const AMPLITUDE_THRESHOLD = 8; // Overall amplitude (0-127)
 
                 const isVoiceDetected = avgVoiceEnergy > VOICE_ENERGY_THRESHOLD && avgAmplitude > AMPLITUDE_THRESHOLD;
 
@@ -4448,9 +4448,9 @@
                 const avgAmplitude = sum / dataArray.length;
 
                 // Voice detected if there's energy in voice frequencies AND sufficient amplitude
-                // Higher thresholds to filter background noise and capture cleaner speech
-                const VOICE_ENERGY_THRESHOLD = 50; // Energy in voice frequency range (0-255)
-                const AMPLITUDE_THRESHOLD = 12; // Overall amplitude (0-127)
+                // These thresholds are more Google-like: higher and more selective
+                const VOICE_ENERGY_THRESHOLD = 30; // Energy in voice frequency range (0-255)
+                const AMPLITUDE_THRESHOLD = 8; // Overall amplitude (0-127)
 
                 const isVoiceDetected = avgVoiceEnergy > VOICE_ENERGY_THRESHOLD && avgAmplitude > AMPLITUDE_THRESHOLD;
 
