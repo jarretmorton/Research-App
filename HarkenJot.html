@@ -83,12 +83,20 @@
           // First try without forcing sample rate (more compatible)
           try {
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Resume AudioContext for mobile browsers (required due to autoplay policies)
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
             audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
             console.log('Decoded at native rate:', audioBuffer.sampleRate, 'Hz');
           } catch (e) {
             console.log('Native decode failed, trying 16kHz:', e.message);
             if (audioContext) await audioContext.close().catch(() => {});
             audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            // Resume AudioContext for mobile browsers (required due to autoplay policies)
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
             audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
           }
 
@@ -2081,7 +2089,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.65</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.66</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3124,6 +3132,10 @@
             // Set up voice activity detection for auto-stop
             try {
               const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              // Resume AudioContext for mobile browsers (required due to autoplay policies)
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
               audioContextRef.current = audioContext;
 
               const source = audioContext.createMediaStreamSource(stream);
@@ -4350,6 +4362,10 @@
             // Set up voice activity detection for auto-stop
             try {
               const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              // Resume AudioContext for mobile browsers (required due to autoplay policies)
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
               audioContextRef.current = audioContext;
 
               const source = audioContext.createMediaStreamSource(stream);
