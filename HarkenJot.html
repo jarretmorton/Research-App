@@ -2050,7 +2050,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.74</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.76</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3665,12 +3665,20 @@
               }, 500);
             }
           }, 100);
-        } else if (currentSource && currentSource.type === 'podcast' && currentSource.audioUrl) {
+        } else if (currentSource && currentSource.type === 'podcast') {
           // Skip if we already initialized for this source (prevents loop when updateSource updates currentSource)
           if (lastInitializedSourceRef.current === currentSource.id) {
             return;
           }
           lastInitializedSourceRef.current = currentSource.id;
+
+          // Check if audioUrl is missing (older sources might not have it)
+          if (!currentSource.audioUrl) {
+            showToast('This podcast is missing its audio URL - please re-add it from the original link');
+            setVideoId(null);
+            setPodcastAudio(null);
+            return;
+          }
 
           setVideoId(null);
           setPodcastAudio({
@@ -4739,19 +4747,7 @@
                 </div>
               </div>
 
-              {podcastAudio.artworkUrl && !carMode && (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem' }}>
-                  <img
-                    src={podcastAudio.artworkUrl}
-                    alt="Podcast artwork"
-                    style={{ width: '200px', height: '200px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
-                  />
-                </div>
-              )}
-
-              {/* Spacer to allow flex shrinking when text note appears - hidden in car mode */}
-              <div style={{ flex: 1, minHeight: 0, display: carMode ? 'none' : 'block' }} />
-
+              {/* Audio element placed early so it loads before artwork */}
               <audio
                 ref={audioPlayerRef}
                 src={podcastAudio.audioUrl}
@@ -4772,8 +4768,27 @@
                     updateSource(currentSource.id, { isRead: true });
                   }
                 }}
+                onError={(e) => {
+                  console.error('Audio load error:', e.target.error);
+                  showToast('Failed to load audio - the URL may be blocked or unavailable');
+                }}
                 style={{ display: 'none' }}
               />
+
+              {podcastAudio.artworkUrl && !carMode && (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem' }}>
+                  <img
+                    src={podcastAudio.artworkUrl}
+                    alt="Podcast artwork"
+                    loading="lazy"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                    style={{ width: '200px', height: '200px', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+                  />
+                </div>
+              )}
+
+              {/* Spacer to allow flex shrinking when text note appears - hidden in car mode */}
+              <div style={{ flex: 1, minHeight: 0, display: carMode ? 'none' : 'block' }} />
 
               {showTextNote && (
                 <div className="text-note-container">
