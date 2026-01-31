@@ -2089,7 +2089,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.69</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.70</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5105,7 +5105,7 @@
       };
 
       const exportAllNotes = () => {
-        if (!currentSource || notes.length === 0) return;
+        if (!currentSource) return;
 
         const getFirstThreeWords = (text) => {
           if (!text) return '';
@@ -5113,20 +5113,24 @@
           return words.join(' ');
         };
 
-        let exportText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})\nNotes:\n`;
-        notes.forEach(note => {
-          let notePrefix = '';
-          if (note.timestamp !== undefined) {
-            notePrefix = `[${formatTime(note.timestamp)}] `;
-          } else if (note.position !== undefined && note.context) {
-            const firstThree = getFirstThreeWords(note.context);
-            notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
-          }
-          exportText += `- ${notePrefix}${note.text}\n`;
-        });
+        let exportText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})`;
+
+        if (notes.length > 0) {
+          exportText += `\nNotes:\n`;
+          notes.forEach(note => {
+            let notePrefix = '';
+            if (note.timestamp !== undefined) {
+              notePrefix = `[${formatTime(note.timestamp)}] `;
+            } else if (note.position !== undefined && note.context) {
+              const firstThree = getFirstThreeWords(note.context);
+              notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+            }
+            exportText += `- ${notePrefix}${note.text}\n`;
+          });
+        }
 
         navigator.clipboard.writeText(exportText);
-        showToast('All notes copied to clipboard');
+        showToast(notes.length > 0 ? 'All notes copied to clipboard' : 'Title and link copied to clipboard');
       };
 
       return (
@@ -5143,7 +5147,13 @@
               </button>
             )}
           </div>
-          
+
+          <div className="export-section" style={{ marginTop: '0.5rem', borderTop: 'none' }}>
+            <button className="export-btn" onClick={exportAllNotes}>
+              <Icons.Copy /> Copy
+            </button>
+          </div>
+
           {notes.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--text-muted)' }}>
               <Icons.Mic />
@@ -5207,14 +5217,6 @@
                   )}
                 </div>
               ))}
-            </div>
-          )}
-
-          {notes.length > 0 && (
-            <div className="export-section">
-              <button className="export-btn" onClick={exportAllNotes}>
-                <Icons.Copy /> Copy Notes
-              </button>
             </div>
           )}
         </div>
