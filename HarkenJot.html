@@ -2175,6 +2175,87 @@
       );
     }
 
+    // Editable Title Component
+    const EditableTitle = ({ title, onSave, style = {} }) => {
+      const [isEditing, setIsEditing] = useState(false);
+      const [editValue, setEditValue] = useState(title);
+      const inputRef = useRef(null);
+
+      useEffect(() => {
+        setEditValue(title);
+      }, [title]);
+
+      useEffect(() => {
+        if (isEditing && inputRef.current) {
+          inputRef.current.focus();
+          inputRef.current.select();
+        }
+      }, [isEditing]);
+
+      const handleSave = () => {
+        const trimmedValue = editValue.trim();
+        if (trimmedValue && trimmedValue !== title) {
+          onSave(trimmedValue);
+        } else {
+          setEditValue(title);
+        }
+        setIsEditing(false);
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+          handleSave();
+        } else if (e.key === 'Escape') {
+          setEditValue(title);
+          setIsEditing(false);
+        }
+      };
+
+      if (isEditing) {
+        return (
+          <input
+            ref={inputRef}
+            type="text"
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={handleSave}
+            onKeyDown={handleKeyDown}
+            className="editable-title-input"
+            style={{
+              flex: 1,
+              fontSize: 'inherit',
+              fontWeight: 'inherit',
+              fontFamily: 'inherit',
+              padding: '0.25rem 0.5rem',
+              border: '2px solid var(--accent)',
+              borderRadius: '6px',
+              background: 'white',
+              outline: 'none',
+              ...style
+            }}
+          />
+        );
+      }
+
+      return (
+        <h2
+          onClick={() => setIsEditing(true)}
+          title="Click to edit title"
+          style={{
+            flex: 1,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            ...style
+          }}
+        >
+          {title}
+          <span style={{ opacity: 0.4, display: 'inline-flex' }}><Icons.Pencil /></span>
+        </h2>
+      );
+    };
+
     // Reader View Component
     const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, showToast, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
@@ -3320,7 +3401,15 @@
               <div className="reader-header">
                 <div className="source-info" style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                    <h2 style={{ flex: 1 }}>{content.title}</h2>
+                    <EditableTitle
+                      title={content.title}
+                      onSave={(newTitle) => {
+                        if (currentSource) {
+                          updateSource(currentSource.id, { title: newTitle });
+                        }
+                        setContent(prev => ({ ...prev, title: newTitle }));
+                      }}
+                    />
                     {currentSource && (
                       <div
                         className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
@@ -4490,7 +4579,10 @@
                 <div className="reader-header">
                   <div className="source-info" style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                      <h2 style={{ flex: 1 }}>{currentSource.title || 'YouTube Video'}</h2>
+                      <EditableTitle
+                        title={currentSource.title || 'YouTube Video'}
+                        onSave={(newTitle) => updateSource(currentSource.id, { title: newTitle })}
+                      />
                       <div
                         className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
                         onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
@@ -4621,7 +4713,15 @@
               <div className="reader-header">
                 <div className="source-info" style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
-                    <h2 style={{ flex: 1 }}>{podcastAudio.title}</h2>
+                    <EditableTitle
+                      title={podcastAudio.title}
+                      onSave={(newTitle) => {
+                        if (currentSource) {
+                          updateSource(currentSource.id, { title: newTitle });
+                        }
+                        setPodcastAudio(prev => ({ ...prev, title: newTitle }));
+                      }}
+                    />
                     {currentSource && (
                       <div
                         className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
