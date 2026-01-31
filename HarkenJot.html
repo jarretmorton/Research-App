@@ -2051,7 +2051,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.77</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.78</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4781,9 +4781,9 @@
                 style={{ display: 'none' }}
               />
 
-              {podcastAudio.artworkUrl && !carMode && (
+              {!carMode && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem' }}>
-                  {artworkFailed ? (
+                  {(!podcastAudio.artworkUrl || artworkFailed) ? (
                     <button
                       onClick={() => setArtworkFailed(false)}
                       style={{
