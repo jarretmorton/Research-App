@@ -2050,7 +2050,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.74</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.75</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3665,12 +3665,20 @@
               }, 500);
             }
           }, 100);
-        } else if (currentSource && currentSource.type === 'podcast' && currentSource.audioUrl) {
+        } else if (currentSource && currentSource.type === 'podcast') {
           // Skip if we already initialized for this source (prevents loop when updateSource updates currentSource)
           if (lastInitializedSourceRef.current === currentSource.id) {
             return;
           }
           lastInitializedSourceRef.current = currentSource.id;
+
+          // Check if audioUrl is missing (older sources might not have it)
+          if (!currentSource.audioUrl) {
+            showToast('This podcast is missing its audio URL - please re-add it from the original link');
+            setVideoId(null);
+            setPodcastAudio(null);
+            return;
+          }
 
           setVideoId(null);
           setPodcastAudio({
@@ -4771,6 +4779,10 @@
                   if (currentSource?.id && !currentSource.isRead) {
                     updateSource(currentSource.id, { isRead: true });
                   }
+                }}
+                onError={(e) => {
+                  console.error('Audio load error:', e.target.error);
+                  showToast('Failed to load audio - the URL may be blocked or unavailable');
                 }}
                 style={{ display: 'none' }}
               />
