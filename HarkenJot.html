@@ -2089,7 +2089,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.70</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.71</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4946,24 +4946,52 @@
                 return;
               }
 
-              if (!confirm(`Import ${data.sources.length} sources and ${data.notes.length} notes? This will replace your current library.`)) {
-                return;
-              }
-
-              setSources(data.sources);
-              setNotes(data.notes);
-
-              // Restore saved positions if available (version 2+)
-              if (data.positions) {
-                if (data.positions.reader) {
-                  localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
+              // Check if this is a single-source export (additive import)
+              if (data.exportType === 'single-source') {
+                const sourceTitle = data.sources[0]?.title || 'source';
+                if (!confirm(`Add "${sourceTitle}" and ${data.notes.length} notes to your library? This will not overwrite existing items.`)) {
+                  return;
                 }
-                if (data.positions.media) {
-                  localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
-                }
-              }
 
-              showToast(`Imported ${data.sources.length} sources and ${data.notes.length} notes`);
+                // Additive import: merge with existing data
+                setSources(prevSources => {
+                  // Check if source already exists (by id)
+                  const existingIds = new Set(prevSources.map(s => s.id));
+                  const newSources = data.sources.filter(s => !existingIds.has(s.id));
+                  return [...prevSources, ...newSources];
+                });
+
+                setNotes(prevNotes => {
+                  // Check if notes already exist (by id)
+                  const existingIds = new Set(prevNotes.map(n => n.id));
+                  const newNotes = data.notes.filter(n => !existingIds.has(n.id));
+                  return [...prevNotes, ...newNotes];
+                });
+
+                const addedSources = data.sources.length;
+                const addedNotes = data.notes.length;
+                showToast(`Added ${addedSources} source${addedSources !== 1 ? 's' : ''} and ${addedNotes} note${addedNotes !== 1 ? 's' : ''} to library`);
+              } else {
+                // Full library import (replaces everything)
+                if (!confirm(`Import ${data.sources.length} sources and ${data.notes.length} notes? This will replace your current library.`)) {
+                  return;
+                }
+
+                setSources(data.sources);
+                setNotes(data.notes);
+
+                // Restore saved positions if available (version 2+)
+                if (data.positions) {
+                  if (data.positions.reader) {
+                    localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
+                  }
+                  if (data.positions.media) {
+                    localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
+                  }
+                }
+
+                showToast(`Imported ${data.sources.length} sources and ${data.notes.length} notes`);
+              }
             } catch (err) {
               showToast('Failed to import library');
             }
@@ -5133,6 +5161,33 @@
         showToast(notes.length > 0 ? 'All notes copied to clipboard' : 'Title and link copied to clipboard');
       };
 
+      const exportCurrentSource = () => {
+        if (!currentSource) return;
+
+        const exportData = {
+          version: 2,
+          exportType: 'single-source',
+          exportedAt: new Date().toISOString(),
+          sources: [currentSource],
+          notes: notes
+        };
+
+        const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const now = new Date();
+        const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        // Sanitize title for filename
+        const safeTitle = (currentSource.title || 'source').replace(/[^a-zA-Z0-9]/g, '-').substring(0, 30);
+        a.download = `harkenjot-${safeTitle}-${localDate}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Source and notes exported');
+      };
+
       return (
         <div>
           <div className="sidebar-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -5148,9 +5203,12 @@
             )}
           </div>
 
-          <div className="export-section" style={{ marginTop: '0.5rem', borderTop: 'none' }}>
-            <button className="export-btn" onClick={exportAllNotes}>
+          <div className="export-section" style={{ marginTop: '0.5rem', borderTop: 'none', display: 'flex', gap: '0.5rem' }}>
+            <button className="export-btn" onClick={exportAllNotes} style={{ flex: 1 }}>
               <Icons.Copy /> Copy
+            </button>
+            <button className="export-btn" onClick={exportCurrentSource} style={{ flex: 1 }}>
+              <Icons.FolderUp /> Export
             </button>
           </div>
 
