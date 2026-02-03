@@ -1925,7 +1925,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.80</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.81</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2877,13 +2877,25 @@
 
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: false,
+            continuous: true,  // Keep listening through pauses
             interimResults: true,
             lang: 'en-US'
           });
 
           let finalTranscript = '';
           let hasResult = false;
+          let silenceTimer = null;
+          const SILENCE_TIMEOUT = 3000;  // 3 seconds of silence before auto-stop
+
+          const resetSilenceTimer = () => {
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+            }
+            silenceTimer = setTimeout(() => {
+              console.log('Auto-stopping after 3 seconds of silence');
+              recognition.stop();
+            }, SILENCE_TIMEOUT);
+          };
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
@@ -2891,10 +2903,15 @@
             isStartingRecordingRef.current = false;
             playSound('start');
             showToast('Listening...');
+            // Start silence timer immediately
+            resetSilenceTimer();
           };
 
           recognition.onresult = (event) => {
             hasResult = true;
+            // Reset silence timer on each result (speech detected)
+            resetSilenceTimer();
+
             let interimTranscript = '';
 
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -2912,6 +2929,11 @@
           recognition.onend = () => {
             console.log('Web Speech recognition ended');
             setIsRecording(false);
+            // Clear silence timer
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
+            }
 
             if (finalTranscript.trim()) {
               const sentence = sentencesRef.current[notePosition];
@@ -2942,6 +2964,11 @@
             console.error('Speech recognition error:', event.error);
             setIsRecording(false);
             isStartingRecordingRef.current = false;
+            // Clear silence timer
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
+            }
 
             if (event.error === 'not-allowed' || event.error === 'permission-denied') {
               playSound('error');
@@ -4039,13 +4066,25 @@
 
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: false,
+            continuous: true,  // Keep listening through pauses
             interimResults: true,
             lang: 'en-US'
           });
 
           let finalTranscript = '';
           let hasResult = false;
+          let silenceTimer = null;
+          const SILENCE_TIMEOUT = 3000;  // 3 seconds of silence before auto-stop
+
+          const resetSilenceTimer = () => {
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+            }
+            silenceTimer = setTimeout(() => {
+              console.log('Auto-stopping after 3 seconds of silence');
+              recognition.stop();
+            }, SILENCE_TIMEOUT);
+          };
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
@@ -4053,10 +4092,15 @@
             isStartingRecordingRef.current = false;
             playSound('start');
             showToast('Listening...');
+            // Start silence timer immediately
+            resetSilenceTimer();
           };
 
           recognition.onresult = (event) => {
             hasResult = true;
+            // Reset silence timer on each result (speech detected)
+            resetSilenceTimer();
+
             let interimTranscript = '';
 
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -4074,6 +4118,11 @@
           recognition.onend = () => {
             console.log('Web Speech recognition ended');
             setIsRecording(false);
+            // Clear silence timer
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
+            }
 
             if (finalTranscript.trim()) {
               addNote({
@@ -4097,6 +4146,11 @@
             console.error('Speech recognition error:', event.error);
             setIsRecording(false);
             isStartingRecordingRef.current = false;
+            // Clear silence timer
+            if (silenceTimer) {
+              clearTimeout(silenceTimer);
+              silenceTimer = null;
+            }
 
             if (event.error === 'not-allowed' || event.error === 'permission-denied') {
               playSound('error');
