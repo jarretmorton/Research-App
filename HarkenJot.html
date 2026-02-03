@@ -1925,7 +1925,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.82</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.83</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2850,6 +2850,12 @@
       };
 
       const startRecording = async () => {
+        console.log('=== startRecording called ===');
+        console.log('speechReady:', speechReady);
+        console.log('isStartingRecordingRef.current:', isStartingRecordingRef.current);
+        console.log('isRecording:', isRecording);
+        console.log('mediaRecorderRef.current:', mediaRecorderRef.current);
+
         if (!speechReady) {
           playSound('error');
           showToast('Speech recognition not available. Use text notes.');
@@ -2858,12 +2864,15 @@
 
         // Prevent race condition from multiple rapid clicks
         if (isStartingRecordingRef.current) {
+          console.log('Already starting recording, returning early');
           return;
         }
         isStartingRecordingRef.current = true;
 
         // Clean up any existing recording state
+        console.log('Calling stopRecording to clean up...');
         stopRecording();
+        console.log('stopRecording completed');
 
         // Store state before stopping playback (use local vars, not refs)
         const wasPlaying = isPlaying;
@@ -2871,12 +2880,15 @@
 
         // Stop any ongoing speech synthesis before starting recognition
         // On desktop, there can be conflicts between TTS and STT
+        console.log('isPlaying:', isPlaying, 'speechSynthesis.speaking:', window.speechSynthesis.speaking);
         if (isPlaying || window.speechSynthesis.speaking) {
+          console.log('Canceling speech synthesis...');
           wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           setIsPlaying(false);
           // Wait for speech synthesis to fully stop before starting recognition
           await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('Speech synthesis canceled, waited 100ms');
         }
 
         try {
@@ -2886,6 +2898,7 @@
             interimResults: true,
             lang: 'en-US'
           });
+          console.log('Recognition instance created:', recognition);
 
           let finalTranscript = '';
           let hasResult = false;
@@ -2915,8 +2928,13 @@
           };
 
           recognition.onend = () => {
-            console.log('Web Speech recognition ended');
+            console.log('=== Web Speech recognition onend ===');
+            console.log('finalTranscript:', finalTranscript);
+            console.log('hasResult:', hasResult);
+            console.log('isStartingRecordingRef.current was:', isStartingRecordingRef.current);
+
             setIsRecording(false);
+            isStartingRecordingRef.current = false; // Always reset this!
 
             if (finalTranscript.trim()) {
               const sentence = sentencesRef.current[notePosition];
@@ -2933,6 +2951,8 @@
               playSound('error');
               showToast('No speech detected - try again');
             } else {
+              // Check if onstart ever fired
+              console.log('No results - recognition may have failed to start properly');
               playSound('error');
               showToast('No speech detected - try speaking louder');
             }
@@ -4037,6 +4057,10 @@
       };
 
       const startRecording = async () => {
+        console.log('=== startRecording called (MediaView) ===');
+        console.log('speechReady:', speechReady);
+        console.log('isStartingRecordingRef.current:', isStartingRecordingRef.current);
+
         if (!speechReady) {
           playSound('error');
           showToast('Speech recognition not available. Use text notes.');
@@ -4045,11 +4069,13 @@
 
         // Prevent race condition from multiple rapid clicks
         if (isStartingRecordingRef.current) {
+          console.log('Already starting recording, returning early');
           return;
         }
         isStartingRecordingRef.current = true;
 
         // Clean up any existing recording state
+        console.log('Calling stopRecording to clean up...');
         stopRecording();
 
         if (isPlaying && playerRef.current) {
@@ -4065,12 +4091,13 @@
             interimResults: true,
             lang: 'en-US'
           });
+          console.log('Recognition instance created');
 
           let finalTranscript = '';
           let hasResult = false;
 
           recognition.onstart = () => {
-            console.log('Web Speech recognition started');
+            console.log('=== Web Speech recognition onstart (MediaView) ===');
             setIsRecording(true);
             isStartingRecordingRef.current = false;
             playSound('start');
@@ -4094,8 +4121,13 @@
           };
 
           recognition.onend = () => {
-            console.log('Web Speech recognition ended');
+            console.log('=== Web Speech recognition onend (MediaView) ===');
+            console.log('finalTranscript:', finalTranscript);
+            console.log('hasResult:', hasResult);
+            console.log('isStartingRecordingRef.current was:', isStartingRecordingRef.current);
+
             setIsRecording(false);
+            isStartingRecordingRef.current = false; // Always reset this!
 
             if (finalTranscript.trim()) {
               addNote({
@@ -4110,6 +4142,7 @@
               playSound('error');
               showToast('No speech detected - try again');
             } else {
+              console.log('No results - recognition may have failed to start properly');
               playSound('error');
               showToast('No speech detected - try speaking louder');
             }
