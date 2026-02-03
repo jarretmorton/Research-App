@@ -1925,7 +1925,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.81</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.82</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2869,13 +2869,18 @@
         const wasPlaying = isPlaying;
         const notePosition = currentSentenceIndex;
 
-        if (isPlaying) {
+        // Stop any ongoing speech synthesis before starting recognition
+        // On desktop, there can be conflicts between TTS and STT
+        if (isPlaying || window.speechSynthesis.speaking) {
           wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           setIsPlaying(false);
+          // Wait for speech synthesis to fully stop before starting recognition
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
         try {
+          console.log('Creating speech recognition instance...');
           const recognition = window.WebSpeechAPI.createRecognition({
             continuous: false,
             interimResults: true,
@@ -2939,7 +2944,7 @@
           };
 
           recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
+            console.error('Speech recognition error:', event.error, event);
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
@@ -2952,9 +2957,18 @@
             } else if (event.error === 'network') {
               playSound('error');
               showToast('Network error - check your connection');
+            } else if (event.error === 'aborted') {
+              playSound('error');
+              showToast('Speech recognition was interrupted. Try again.');
+            } else if (event.error === 'audio-capture') {
+              playSound('error');
+              showToast('No microphone found. Check your audio settings.');
+            } else if (event.error === 'service-not-allowed') {
+              playSound('error');
+              showToast('Speech service not allowed. Try using Chrome or Edge.');
             } else {
               playSound('error');
-              showToast('Speech recognition error. Try again.');
+              showToast(`Speech recognition error: ${event.error}`);
             }
 
             // Resume playback if it was playing before
@@ -2966,7 +2980,9 @@
           // Store recognition instance for stopRecording
           mediaRecorderRef.current = recognition;
 
+          console.log('Starting speech recognition...');
           recognition.start();
+          console.log('Speech recognition start() called');
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
           playSound('error');
@@ -4043,6 +4059,7 @@
         const recordingTime = currentTime;
 
         try {
+          console.log('Creating speech recognition instance...');
           const recognition = window.WebSpeechAPI.createRecognition({
             continuous: false,
             interimResults: true,
@@ -4099,7 +4116,7 @@
           };
 
           recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error);
+            console.error('Speech recognition error:', event.error, event);
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
@@ -4112,16 +4129,27 @@
             } else if (event.error === 'network') {
               playSound('error');
               showToast('Network error - check your connection');
+            } else if (event.error === 'aborted') {
+              playSound('error');
+              showToast('Speech recognition was interrupted. Try again.');
+            } else if (event.error === 'audio-capture') {
+              playSound('error');
+              showToast('No microphone found. Check your audio settings.');
+            } else if (event.error === 'service-not-allowed') {
+              playSound('error');
+              showToast('Speech service not allowed. Try using Chrome or Edge.');
             } else {
               playSound('error');
-              showToast('Speech recognition error. Try again.');
+              showToast(`Speech recognition error: ${event.error}`);
             }
           };
 
           // Store recognition instance for stopRecording
           mediaRecorderRef.current = recognition;
 
+          console.log('Starting speech recognition...');
           recognition.start();
+          console.log('Speech recognition start() called');
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
           playSound('error');
