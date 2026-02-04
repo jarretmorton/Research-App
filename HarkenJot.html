@@ -1925,7 +1925,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.83</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.84</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2902,6 +2902,7 @@
 
           let finalTranscript = '';
           let hasResult = false;
+          let hadError = false; // Track if onerror fired to avoid duplicate messages
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
@@ -2929,14 +2930,15 @@
 
           recognition.onend = () => {
             console.log('=== Web Speech recognition onend ===');
-            console.log('finalTranscript:', finalTranscript);
-            console.log('hasResult:', hasResult);
-            console.log('isStartingRecordingRef.current was:', isStartingRecordingRef.current);
+            console.log('finalTranscript:', finalTranscript, 'hasResult:', hasResult, 'hadError:', hadError);
 
             setIsRecording(false);
-            isStartingRecordingRef.current = false; // Always reset this!
+            isStartingRecordingRef.current = false;
 
-            if (finalTranscript.trim()) {
+            // Don't show "no speech" message if an error already occurred
+            if (hadError) {
+              console.log('Skipping onend message - error already handled');
+            } else if (finalTranscript.trim()) {
               const sentence = sentencesRef.current[notePosition];
               addNote({
                 sourceId: currentSource?.id,
@@ -2951,8 +2953,6 @@
               playSound('error');
               showToast('No speech detected - try again');
             } else {
-              // Check if onstart ever fired
-              console.log('No results - recognition may have failed to start properly');
               playSound('error');
               showToast('No speech detected - try speaking louder');
             }
@@ -2965,6 +2965,7 @@
 
           recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error, event);
+            hadError = true; // Mark error so onend doesn't show duplicate message
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
@@ -4095,6 +4096,7 @@
 
           let finalTranscript = '';
           let hasResult = false;
+          let hadError = false; // Track if onerror fired to avoid duplicate messages
 
           recognition.onstart = () => {
             console.log('=== Web Speech recognition onstart (MediaView) ===');
@@ -4122,14 +4124,15 @@
 
           recognition.onend = () => {
             console.log('=== Web Speech recognition onend (MediaView) ===');
-            console.log('finalTranscript:', finalTranscript);
-            console.log('hasResult:', hasResult);
-            console.log('isStartingRecordingRef.current was:', isStartingRecordingRef.current);
+            console.log('finalTranscript:', finalTranscript, 'hasResult:', hasResult, 'hadError:', hadError);
 
             setIsRecording(false);
-            isStartingRecordingRef.current = false; // Always reset this!
+            isStartingRecordingRef.current = false;
 
-            if (finalTranscript.trim()) {
+            // Don't show "no speech" message if an error already occurred
+            if (hadError) {
+              console.log('Skipping onend message - error already handled');
+            } else if (finalTranscript.trim()) {
               addNote({
                 sourceId: currentSource?.id,
                 text: finalTranscript.trim(),
@@ -4142,7 +4145,6 @@
               playSound('error');
               showToast('No speech detected - try again');
             } else {
-              console.log('No results - recognition may have failed to start properly');
               playSound('error');
               showToast('No speech detected - try speaking louder');
             }
@@ -4150,6 +4152,7 @@
 
           recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error, event);
+            hadError = true; // Mark error so onend doesn't show duplicate message
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
