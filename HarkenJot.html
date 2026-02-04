@@ -3069,7 +3069,7 @@
         }
       };
 
-      // Start recording using Whisper (MediaRecorder-based)
+      // Start recording using Whisper (MediaRecorder-based) with silence detection
       const startWhisperRecording = async (wasPlaying, notePosition) => {
         try {
           const audioConstraints = {
@@ -3084,6 +3084,25 @@
           const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
           streamRef.current = stream;
 
+          // Set up silence detection using Web Audio API
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          audioContextRef.current = audioContext;
+          const analyser = audioContext.createAnalyser();
+          analyzerRef.current = analyser;
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.1;
+
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          let silenceStart = null;
+          let hasDetectedSpeech = false;
+          const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
+          const SILENCE_DURATION = 2000; // Stop after 2 seconds of silence
+          const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
+          const recordingStartTime = Date.now();
+
           const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
           const mediaRecorder = mimeType
             ? new MediaRecorder(stream, { mimeType })
@@ -3091,6 +3110,40 @@
           mediaRecorderRef.current = mediaRecorder;
 
           const audioChunks = [];
+
+          // Silence detection loop
+          const checkSilence = () => {
+            if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+              return;
+            }
+
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+            // Check for max recording time
+            if (Date.now() - recordingStartTime > MAX_RECORDING_TIME) {
+              console.log('Max recording time reached, stopping');
+              mediaRecorderRef.current.stop();
+              return;
+            }
+
+            if (average > SILENCE_THRESHOLD) {
+              // Sound detected
+              hasDetectedSpeech = true;
+              silenceStart = null;
+            } else if (hasDetectedSpeech) {
+              // Silence after speech
+              if (!silenceStart) {
+                silenceStart = Date.now();
+              } else if (Date.now() - silenceStart > SILENCE_DURATION) {
+                console.log('Silence detected for 2 seconds, stopping recording');
+                mediaRecorderRef.current.stop();
+                return;
+              }
+            }
+
+            silenceTimeoutRef.current = requestAnimationFrame(checkSilence);
+          };
 
           mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
@@ -3100,6 +3153,12 @@
 
           mediaRecorder.onerror = (event) => {
             console.error('MediaRecorder error:', event.error);
+            if (silenceTimeoutRef.current) {
+              cancelAnimationFrame(silenceTimeoutRef.current);
+            }
+            if (audioContextRef.current) {
+              audioContextRef.current.close().catch(() => {});
+            }
             showToast('Recording error. Try again.');
             stream.getTracks().forEach(track => track.stop());
             setIsRecording(false);
@@ -3107,6 +3166,15 @@
           };
 
           mediaRecorder.onstop = async () => {
+            // Clean up silence detection
+            if (silenceTimeoutRef.current) {
+              cancelAnimationFrame(silenceTimeoutRef.current);
+            }
+            if (audioContextRef.current) {
+              audioContextRef.current.close().catch(() => {});
+              audioContextRef.current = null;
+            }
+
             stream.getTracks().forEach(track => track.stop());
             streamRef.current = null;
 
@@ -3169,6 +3237,9 @@
           isStartingRecordingRef.current = false;
           playSound('start');
           showToast('Listening (offline mode)...');
+
+          // Start silence detection
+          checkSilence();
         } catch (error) {
           console.error('Failed to start Whisper recording:', error);
           playSound('error');
@@ -4418,7 +4489,7 @@
         }
       };
 
-      // Start recording using Whisper (MediaRecorder-based)
+      // Start recording using Whisper (MediaRecorder-based) with silence detection
       const startWhisperRecording = async (recordingTime) => {
         try {
           const audioConstraints = {
@@ -4433,6 +4504,25 @@
           const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
           streamRef.current = stream;
 
+          // Set up silence detection using Web Audio API
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          audioContextRef.current = audioContext;
+          const analyser = audioContext.createAnalyser();
+          analyzerRef.current = analyser;
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.1;
+
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          let silenceStart = null;
+          let hasDetectedSpeech = false;
+          const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
+          const SILENCE_DURATION = 2000; // Stop after 2 seconds of silence
+          const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
+          const recordingStartTime = Date.now();
+
           const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
           const mediaRecorder = mimeType
             ? new MediaRecorder(stream, { mimeType })
@@ -4440,6 +4530,40 @@
           mediaRecorderRef.current = mediaRecorder;
 
           const audioChunks = [];
+
+          // Silence detection loop
+          const checkSilence = () => {
+            if (!mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording') {
+              return;
+            }
+
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+
+            // Check for max recording time
+            if (Date.now() - recordingStartTime > MAX_RECORDING_TIME) {
+              console.log('Max recording time reached, stopping');
+              mediaRecorderRef.current.stop();
+              return;
+            }
+
+            if (average > SILENCE_THRESHOLD) {
+              // Sound detected
+              hasDetectedSpeech = true;
+              silenceStart = null;
+            } else if (hasDetectedSpeech) {
+              // Silence after speech
+              if (!silenceStart) {
+                silenceStart = Date.now();
+              } else if (Date.now() - silenceStart > SILENCE_DURATION) {
+                console.log('Silence detected for 2 seconds, stopping recording');
+                mediaRecorderRef.current.stop();
+                return;
+              }
+            }
+
+            silenceTimeoutRef.current = requestAnimationFrame(checkSilence);
+          };
 
           mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
@@ -4449,6 +4573,12 @@
 
           mediaRecorder.onerror = (event) => {
             console.error('MediaRecorder error:', event.error);
+            if (silenceTimeoutRef.current) {
+              cancelAnimationFrame(silenceTimeoutRef.current);
+            }
+            if (audioContextRef.current) {
+              audioContextRef.current.close().catch(() => {});
+            }
             showToast('Recording error. Try again.');
             stream.getTracks().forEach(track => track.stop());
             setIsRecording(false);
@@ -4456,6 +4586,15 @@
           };
 
           mediaRecorder.onstop = async () => {
+            // Clean up silence detection
+            if (silenceTimeoutRef.current) {
+              cancelAnimationFrame(silenceTimeoutRef.current);
+            }
+            if (audioContextRef.current) {
+              audioContextRef.current.close().catch(() => {});
+              audioContextRef.current = null;
+            }
+
             stream.getTracks().forEach(track => track.stop());
             streamRef.current = null;
 
@@ -4506,6 +4645,9 @@
           isStartingRecordingRef.current = false;
           playSound('start');
           showToast('Listening (offline mode)...');
+
+          // Start silence detection
+          checkSilence();
         } catch (error) {
           console.error('Failed to start Whisper recording:', error);
           playSound('error');
