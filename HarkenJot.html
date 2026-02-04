@@ -14,6 +14,7 @@
     const webSpeechAPI = {
       isReady: false,
       isSupported: false,
+      hasNetworkError: false,  // Track if we've had network errors
 
       init() {
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -42,6 +43,11 @@
         recognition.maxAlternatives = options.maxAlternatives ?? 1;
 
         return recognition;
+      },
+
+      markNetworkError() {
+        this.hasNetworkError = true;
+        console.log('Web Speech API marked as having network error - will suggest Whisper fallback');
       }
     };
 
@@ -49,6 +55,168 @@
     webSpeechAPI.init();
     window.WebSpeechAPI = webSpeechAPI;
     console.log('WebSpeechAPI initialized, supported:', webSpeechAPI.isSupported);
+  </script>
+  <script type="module">
+    // Whisper Speech Recognition using Transformers.js (fallback for when Web Speech API fails)
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+
+    // Configure transformers.js
+    env.allowLocalModels = false;
+
+    let whisperPipeline = null;
+    let isLoadingModel = false;
+
+    const whisperASR = {
+      isReady: false,
+      isLoading: false,
+      progress: 0,
+      error: null,
+
+      async loadModel(onProgress) {
+        if (whisperPipeline) {
+          this.isReady = true;
+          return true;
+        }
+        if (isLoadingModel) return false;
+
+        isLoadingModel = true;
+        this.isLoading = true;
+        this.error = null;
+
+        try {
+          console.log('Loading Whisper model...');
+          whisperPipeline = await pipeline(
+            'automatic-speech-recognition',
+            'Xenova/whisper-tiny.en',
+            {
+              progress_callback: (progress) => {
+                if (progress.status === 'progress') {
+                  this.progress = Math.round(progress.progress);
+                  if (onProgress) onProgress(this.progress);
+                }
+                console.log('Model load progress:', progress);
+              }
+            }
+          );
+          console.log('Whisper model loaded successfully');
+          this.isReady = true;
+          this.isLoading = false;
+          isLoadingModel = false;
+          return true;
+        } catch (error) {
+          console.error('Failed to load Whisper model:', error);
+          this.error = error.message;
+          this.isLoading = false;
+          isLoadingModel = false;
+          return false;
+        }
+      },
+
+      async transcribe(audioBlob) {
+        if (!whisperPipeline) {
+          throw new Error('Whisper model not loaded');
+        }
+
+        try {
+          console.log('Transcribing audio...', audioBlob.size, 'bytes, type:', audioBlob.type);
+
+          // Decode audio blob to raw audio samples using Web Audio API
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          console.log('ArrayBuffer size:', arrayBuffer.byteLength);
+
+          // Try different sample rates - some browsers need native rate first
+          let audioContext;
+          let audioBuffer;
+
+          try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+            console.log('Decoded at native rate:', audioBuffer.sampleRate, 'Hz');
+          } catch (e) {
+            console.log('Native decode failed, trying 16kHz:', e.message);
+            if (audioContext) await audioContext.close().catch(() => {});
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+            }
+            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+          }
+
+          // Get audio data as Float32Array (mono for Whisper)
+          let audioData;
+          if (audioBuffer.numberOfChannels > 1) {
+            const left = audioBuffer.getChannelData(0);
+            const right = audioBuffer.getChannelData(1);
+            audioData = new Float32Array(left.length);
+            for (let i = 0; i < left.length; i++) {
+              audioData[i] = (left[i] + right[i]) / 2;
+            }
+          } else {
+            audioData = audioBuffer.getChannelData(0);
+          }
+
+          // Resample to 16kHz if needed (Whisper requires 16kHz)
+          if (audioBuffer.sampleRate !== 16000) {
+            console.log('Resampling from', audioBuffer.sampleRate, 'to 16000 Hz');
+            const ratio = audioBuffer.sampleRate / 16000;
+            const newLength = Math.round(audioData.length / ratio);
+            const resampled = new Float32Array(newLength);
+            for (let i = 0; i < newLength; i++) {
+              const srcIndex = Math.floor(i * ratio);
+              resampled[i] = audioData[srcIndex];
+            }
+            audioData = resampled;
+          }
+
+          console.log('Audio ready:', audioData.length, 'samples at 16kHz');
+
+          if (audioData.length < 1600) {
+            throw new Error('Audio too short');
+          }
+
+          const result = await whisperPipeline(audioData, {
+            chunk_length_s: 30,
+            stride_length_s: 5,
+            language: 'english',
+            task: 'transcribe',
+            sampling_rate: 16000,
+          });
+          console.log('Transcription result:', result);
+          await audioContext.close();
+          return result.text || '';
+        } catch (error) {
+          console.error('Transcription error:', error);
+          throw error;
+        }
+      },
+
+      getSupportedMimeType() {
+        const types = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4',
+          'audio/ogg;codecs=opus',
+          'audio/ogg',
+          'audio/wav',
+          'audio/mpeg',
+          ''
+        ];
+        for (const type of types) {
+          if (type === '' || MediaRecorder.isTypeSupported(type)) {
+            console.log('Using audio format:', type || 'browser default');
+            return type;
+          }
+        }
+        return '';
+      }
+    };
+
+    // Make it globally available
+    window.WhisperASR = whisperASR;
+    console.log('WhisperASR fallback initialized');
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1925,7 +2093,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.5.80</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.6.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2142,6 +2310,9 @@
       const [showTextNote, setShowTextNote] = useState(false);
       const [textNote, setTextNote] = useState('');
       const [speechReady, setSpeechReady] = useState(false);
+      const [useWhisperFallback, setUseWhisperFallback] = useState(false);
+      const [whisperLoading, setWhisperLoading] = useState(false);
+      const [whisperProgress, setWhisperProgress] = useState(0);
       const [isTranscribing, setIsTranscribing] = useState(false);
       const [autoScroll, setAutoScroll] = useState(true);
       const [showSearch, setShowSearch] = useState(false);
@@ -2151,6 +2322,7 @@
       const utteranceRef = useRef(null);
       const mediaRecorderRef = useRef(null);
       const audioChunksRef = useRef([]);
+      const streamRef = useRef(null);
       const sentencesRef = useRef([]);
       const wasPlayingRef = useRef(false);
       const interruptedSentenceRef = useRef(0);
@@ -2299,9 +2471,19 @@
       useEffect(() => {
         if (window.WebSpeechAPI?.isSupported) {
           setSpeechReady(true);
-          console.log('Web Speech API ready');
+          console.log('ReaderView: Web Speech API ready');
+          // Check if we previously had network errors and Whisper is loaded
+          if (window.WebSpeechAPI.hasNetworkError && window.WhisperASR?.isReady) {
+            setUseWhisperFallback(true);
+            console.log('ReaderView: Using Whisper fallback due to previous network errors');
+          }
+        } else if (window.WhisperASR) {
+          // Web Speech not supported, Whisper available as fallback
+          console.log('ReaderView: Web Speech API not supported, Whisper fallback available');
+          setSpeechReady(true); // Enable button, will use Whisper
+          setUseWhisperFallback(true);
         } else {
-          console.log('Web Speech API not supported');
+          console.log('ReaderView: No speech recognition available');
           showToast('Speech recognition not supported in this browser. Use text notes.');
         }
       }, []);
@@ -2818,10 +3000,10 @@
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
-      const isProcessing = isRecording || isTranscribing;
+      const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       const stopRecording = () => {
-        // Stop Web Speech API recognition
+        // Stop Web Speech API recognition or MediaRecorder (Whisper mode)
         if (mediaRecorderRef.current) {
           try {
             playSound('stop');
@@ -2831,15 +3013,20 @@
           }
           mediaRecorderRef.current = null;
         }
+        // Clean up audio stream if using Whisper
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
       };
 
       const handleVoiceButtonClick = () => {
         if (isRecording) {
           stopRecording();
-        } else if (isTranscribing) {
-          // Provide feedback that we're busy transcribing
+        } else if (isTranscribing || whisperLoading) {
+          // Provide feedback that we're busy
           playSound('error');
-          showToast('Still processing previous recording...');
+          showToast(whisperLoading ? 'Loading speech model...' : 'Still processing...');
         } else if (isStartingRecordingRef.current) {
           // Prevent concurrent startRecording calls
           playSound('error');
@@ -2849,32 +3036,182 @@
         }
       };
 
+      // Load Whisper model for fallback
+      const loadWhisperModel = async () => {
+        if (window.WhisperASR?.isReady) {
+          setUseWhisperFallback(true);
+          return true;
+        }
+        if (whisperLoading) return false;
+
+        setWhisperLoading(true);
+        showToast('Loading offline speech model (40MB)...');
+
+        const success = await window.WhisperASR?.loadModel((progress) => {
+          setWhisperProgress(progress);
+        });
+
+        setWhisperLoading(false);
+        if (success) {
+          setUseWhisperFallback(true);
+          showToast('Offline speech model ready!');
+          return true;
+        } else {
+          showToast('Failed to load offline model');
+          return false;
+        }
+      };
+
+      // Start recording using Whisper (MediaRecorder-based)
+      const startWhisperRecording = async (wasPlaying, notePosition) => {
+        try {
+          const audioConstraints = {
+            audio: {
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+              channelCount: { ideal: 1 },
+              sampleRate: { ideal: 16000 }
+            }
+          };
+          const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+          streamRef.current = stream;
+
+          const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
+          const mediaRecorder = mimeType
+            ? new MediaRecorder(stream, { mimeType })
+            : new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+
+          const audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+
+          mediaRecorder.onerror = (event) => {
+            console.error('MediaRecorder error:', event.error);
+            showToast('Recording error. Try again.');
+            stream.getTracks().forEach(track => track.stop());
+            setIsRecording(false);
+            isStartingRecordingRef.current = false;
+          };
+
+          mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+
+            if (audioChunks.length === 0) {
+              playSound('error');
+              showToast('No audio captured. Try again.');
+              setIsRecording(false);
+              if (wasPlaying && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(notePosition), 300);
+              }
+              return;
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+
+            if (audioBlob.size < 500) {
+              playSound('error');
+              showToast('Recording too short. Try again.');
+              setIsRecording(false);
+              if (wasPlaying && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(notePosition), 300);
+              }
+              return;
+            }
+
+            setIsRecording(false);
+            setIsTranscribing(true);
+
+            try {
+              const transcript = await window.WhisperASR.transcribe(audioBlob);
+              if (transcript && transcript.trim()) {
+                const sentence = sentencesRef.current[notePosition];
+                addNote({
+                  sourceId: currentSource?.id,
+                  text: transcript.trim(),
+                  position: notePosition,
+                  context: sentence?.substring(0, 100) + '...',
+                  type: 'voice'
+                });
+                playSound('success');
+                showToast('Note saved!');
+              } else {
+                playSound('error');
+                showToast('No speech detected - try speaking louder');
+              }
+            } catch (error) {
+              console.error('Transcription failed:', error);
+              playSound('error');
+              showToast('Transcription failed. Try again.');
+            }
+            setIsTranscribing(false);
+
+            if (wasPlaying && speakFromIndexRef.current) {
+              setTimeout(() => speakFromIndexRef.current(notePosition), 300);
+            }
+          };
+
+          mediaRecorder.start(100);
+          setIsRecording(true);
+          isStartingRecordingRef.current = false;
+          playSound('start');
+          showToast('Listening (offline mode)...');
+        } catch (error) {
+          console.error('Failed to start Whisper recording:', error);
+          playSound('error');
+          showToast('Failed to access microphone');
+          setIsRecording(false);
+          isStartingRecordingRef.current = false;
+        }
+      };
+
       const startRecording = async () => {
+        console.log('=== startRecording called ===');
+        console.log('speechReady:', speechReady, 'useWhisperFallback:', useWhisperFallback);
+
         if (!speechReady) {
           playSound('error');
           showToast('Speech recognition not available. Use text notes.');
           return;
         }
 
-        // Prevent race condition from multiple rapid clicks
         if (isStartingRecordingRef.current) {
           return;
         }
         isStartingRecordingRef.current = true;
 
-        // Clean up any existing recording state
         stopRecording();
 
-        // Store state before stopping playback (use local vars, not refs)
         const wasPlaying = isPlaying;
         const notePosition = currentSentenceIndex;
 
-        if (isPlaying) {
+        if (isPlaying || window.speechSynthesis.speaking) {
           wasCancelledRef.current = true;
           window.speechSynthesis.cancel();
           setIsPlaying(false);
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
 
+        // Use Whisper if fallback is enabled or Web Speech has had network errors
+        if (useWhisperFallback || window.WebSpeechAPI?.hasNetworkError) {
+          if (!window.WhisperASR?.isReady) {
+            const loaded = await loadWhisperModel();
+            if (!loaded) {
+              isStartingRecordingRef.current = false;
+              return;
+            }
+          }
+          await startWhisperRecording(wasPlaying, notePosition);
+          return;
+        }
+
+        // Try Web Speech API (primary)
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
             continuous: false,
@@ -2884,6 +3221,7 @@
 
           let finalTranscript = '';
           let hasResult = false;
+          let hadError = false;
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
@@ -2896,7 +3234,6 @@
           recognition.onresult = (event) => {
             hasResult = true;
             let interimTranscript = '';
-
             for (let i = event.resultIndex; i < event.results.length; i++) {
               const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
@@ -2905,15 +3242,17 @@
                 interimTranscript += transcript;
               }
             }
-
             console.log('Interim:', interimTranscript, 'Final:', finalTranscript);
           };
 
           recognition.onend = () => {
             console.log('Web Speech recognition ended');
             setIsRecording(false);
+            isStartingRecordingRef.current = false;
 
-            if (finalTranscript.trim()) {
+            if (hadError) {
+              console.log('Skipping onend message - error already handled');
+            } else if (finalTranscript.trim()) {
               const sentence = sentencesRef.current[notePosition];
               addNote({
                 sourceId: currentSource?.id,
@@ -2932,7 +3271,6 @@
               showToast('No speech detected - try speaking louder');
             }
 
-            // Resume playback if it was playing before
             if (wasPlaying && speakFromIndexRef.current) {
               setTimeout(() => speakFromIndexRef.current(notePosition), 300);
             }
@@ -2940,32 +3278,44 @@
 
           recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
+            hadError = true;
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
-            if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+            if (event.error === 'network') {
+              // Network error - offer Whisper fallback
+              window.WebSpeechAPI.markNetworkError();
+              playSound('error');
+              showToast('Network error - switching to offline mode...');
+              // Automatically try to load Whisper and retry
+              loadWhisperModel().then(success => {
+                if (success) {
+                  showToast('Offline mode ready! Try recording again.');
+                }
+              });
+            } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
               playSound('error');
               showToast('Microphone access denied');
             } else if (event.error === 'no-speech') {
               playSound('error');
               showToast('No speech detected - try again');
-            } else if (event.error === 'network') {
+            } else if (event.error === 'aborted') {
               playSound('error');
-              showToast('Network error - check your connection');
+              showToast('Speech recognition interrupted. Try again.');
+            } else if (event.error === 'audio-capture') {
+              playSound('error');
+              showToast('No microphone found. Check your audio settings.');
             } else {
               playSound('error');
-              showToast('Speech recognition error. Try again.');
+              showToast(`Speech recognition error: ${event.error}`);
             }
 
-            // Resume playback if it was playing before
             if (wasPlaying && speakFromIndexRef.current) {
               setTimeout(() => speakFromIndexRef.current(notePosition), 300);
             }
           };
 
-          // Store recognition instance for stopRecording
           mediaRecorderRef.current = recognition;
-
           recognition.start();
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
@@ -3220,11 +3570,13 @@
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
                     onClick={handleVoiceButtonClick}
-                    disabled={!speechReady}
+                    disabled={!speechReady || whisperLoading}
+                    title={!speechReady ? 'Speech recognition not supported' : (useWhisperFallback ? 'Using offline mode' : '')}
                   >
                     {isRecording ? '⏹ Stop' :
+                     whisperLoading ? `Loading ${whisperProgress}%` :
                      isTranscribing ? 'Processing...' :
-                     <><Icons.Mic /> Voice</>}
+                     <><Icons.Mic /> Voice{useWhisperFallback ? ' (offline)' : ''}</>}
                   </button>
                   <button
                     className={`note-btn ${carMode ? 'car-mode' : ''}`}
@@ -3272,6 +3624,9 @@
       const [podcastAudio, setPodcastAudio] = useState(null); // { audioUrl, title, showName, artworkUrl, link }
       const [isLoadingPodcast, setIsLoadingPodcast] = useState(false);
       const [speechReady, setSpeechReady] = useState(false);
+      const [useWhisperFallback, setUseWhisperFallback] = useState(false);
+      const [whisperLoading, setWhisperLoading] = useState(false);
+      const [whisperProgress, setWhisperProgress] = useState(0);
       const [isTranscribing, setIsTranscribing] = useState(false);
       const [showTextNote, setShowTextNote] = useState(false);
       const [textNote, setTextNote] = useState('');
@@ -3282,6 +3637,7 @@
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
       const mediaRecorderRef = useRef(null);
+      const streamRef = useRef(null);
       const intervalRef = useRef(null);
       const isStartingRecordingRef = useRef(false);
       const lastInitializedSourceRef = useRef(null); // Track last initialized source to prevent re-init loops
@@ -3301,7 +3657,7 @@
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
-      const isProcessing = isRecording || isTranscribing;
+      const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       // Load currentSource into player when source is selected from library
       useEffect(() => {
@@ -3380,6 +3736,19 @@
       useEffect(() => {
         if (window.WebSpeechAPI?.isSupported) {
           setSpeechReady(true);
+          console.log('MediaView: Web Speech API ready');
+          // Check if we previously had network errors and Whisper is loaded
+          if (window.WebSpeechAPI.hasNetworkError && window.WhisperASR?.isReady) {
+            setUseWhisperFallback(true);
+            console.log('MediaView: Using Whisper fallback due to previous network errors');
+          }
+        } else if (window.WhisperASR) {
+          console.log('MediaView: Web Speech API not supported, Whisper fallback available');
+          setSpeechReady(true);
+          setUseWhisperFallback(true);
+        } else {
+          console.log('MediaView: No speech recognition available');
+          showToast('Speech recognition not supported in this browser. Use text notes.');
         }
       }, []);
 
@@ -3987,7 +4356,6 @@
       };
 
       const stopRecording = () => {
-        // Stop Web Speech API recognition
         if (mediaRecorderRef.current) {
           try {
             playSound('stop');
@@ -3997,17 +4365,19 @@
           }
           mediaRecorderRef.current = null;
         }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
       };
 
       const handleVoiceButtonClick = () => {
         if (isRecording) {
           stopRecording();
-        } else if (isTranscribing) {
-          // Provide feedback that we're busy transcribing
+        } else if (isTranscribing || whisperLoading) {
           playSound('error');
-          showToast('Still processing previous recording...');
+          showToast(whisperLoading ? 'Loading speech model...' : 'Still processing...');
         } else if (isStartingRecordingRef.current) {
-          // Prevent concurrent startRecording calls
           playSound('error');
           showToast('Please wait, starting recording...');
         } else {
@@ -4015,28 +4385,169 @@
         }
       };
 
+      // Load Whisper model for fallback
+      const loadWhisperModel = async () => {
+        if (window.WhisperASR?.isReady) {
+          setUseWhisperFallback(true);
+          return true;
+        }
+        if (whisperLoading) return false;
+
+        setWhisperLoading(true);
+        showToast('Loading offline speech model (40MB)...');
+
+        const success = await window.WhisperASR?.loadModel((progress) => {
+          setWhisperProgress(progress);
+        });
+
+        setWhisperLoading(false);
+        if (success) {
+          setUseWhisperFallback(true);
+          showToast('Offline speech model ready!');
+          return true;
+        } else {
+          showToast('Failed to load offline model');
+          return false;
+        }
+      };
+
+      // Start recording using Whisper (MediaRecorder-based)
+      const startWhisperRecording = async (recordingTime) => {
+        try {
+          const audioConstraints = {
+            audio: {
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+              channelCount: { ideal: 1 },
+              sampleRate: { ideal: 16000 }
+            }
+          };
+          const stream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+          streamRef.current = stream;
+
+          const mimeType = window.WhisperASR?.getSupportedMimeType() || '';
+          const mediaRecorder = mimeType
+            ? new MediaRecorder(stream, { mimeType })
+            : new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+
+          const audioChunks = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+
+          mediaRecorder.onerror = (event) => {
+            console.error('MediaRecorder error:', event.error);
+            showToast('Recording error. Try again.');
+            stream.getTracks().forEach(track => track.stop());
+            setIsRecording(false);
+            isStartingRecordingRef.current = false;
+          };
+
+          mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+
+            if (audioChunks.length === 0) {
+              playSound('error');
+              showToast('No audio captured. Try again.');
+              setIsRecording(false);
+              return;
+            }
+
+            const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
+
+            if (audioBlob.size < 500) {
+              playSound('error');
+              showToast('Recording too short. Try again.');
+              setIsRecording(false);
+              return;
+            }
+
+            setIsRecording(false);
+            setIsTranscribing(true);
+
+            try {
+              const transcript = await window.WhisperASR.transcribe(audioBlob);
+              if (transcript && transcript.trim()) {
+                addNote({
+                  sourceId: currentSource?.id,
+                  text: transcript.trim(),
+                  timestamp: recordingTime,
+                  type: 'voice'
+                });
+                playSound('success');
+                showToast('Note saved!');
+              } else {
+                playSound('error');
+                showToast('No speech detected - try speaking louder');
+              }
+            } catch (error) {
+              console.error('Transcription failed:', error);
+              playSound('error');
+              showToast('Transcription failed. Try again.');
+            }
+            setIsTranscribing(false);
+          };
+
+          mediaRecorder.start(100);
+          setIsRecording(true);
+          isStartingRecordingRef.current = false;
+          playSound('start');
+          showToast('Listening (offline mode)...');
+        } catch (error) {
+          console.error('Failed to start Whisper recording:', error);
+          playSound('error');
+          showToast('Failed to access microphone');
+          setIsRecording(false);
+          isStartingRecordingRef.current = false;
+        }
+      };
+
       const startRecording = async () => {
+        console.log('=== startRecording called (MediaView) ===');
+        console.log('speechReady:', speechReady, 'useWhisperFallback:', useWhisperFallback);
+
         if (!speechReady) {
           playSound('error');
           showToast('Speech recognition not available. Use text notes.');
           return;
         }
 
-        // Prevent race condition from multiple rapid clicks
         if (isStartingRecordingRef.current) {
           return;
         }
         isStartingRecordingRef.current = true;
 
-        // Clean up any existing recording state
         stopRecording();
 
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
         }
+        if (isPlaying && audioPlayerRef.current) {
+          audioPlayerRef.current.pause();
+        }
 
         const recordingTime = currentTime;
 
+        // Use Whisper if fallback is enabled or Web Speech has had network errors
+        if (useWhisperFallback || window.WebSpeechAPI?.hasNetworkError) {
+          if (!window.WhisperASR?.isReady) {
+            const loaded = await loadWhisperModel();
+            if (!loaded) {
+              isStartingRecordingRef.current = false;
+              return;
+            }
+          }
+          await startWhisperRecording(recordingTime);
+          return;
+        }
+
+        // Try Web Speech API (primary)
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
             continuous: false,
@@ -4046,9 +4557,10 @@
 
           let finalTranscript = '';
           let hasResult = false;
+          let hadError = false;
 
           recognition.onstart = () => {
-            console.log('Web Speech recognition started');
+            console.log('Web Speech recognition started (MediaView)');
             setIsRecording(true);
             isStartingRecordingRef.current = false;
             playSound('start');
@@ -4058,7 +4570,6 @@
           recognition.onresult = (event) => {
             hasResult = true;
             let interimTranscript = '';
-
             for (let i = event.resultIndex; i < event.results.length; i++) {
               const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
@@ -4067,15 +4578,17 @@
                 interimTranscript += transcript;
               }
             }
-
             console.log('Interim:', interimTranscript, 'Final:', finalTranscript);
           };
 
           recognition.onend = () => {
-            console.log('Web Speech recognition ended');
+            console.log('Web Speech recognition ended (MediaView)');
             setIsRecording(false);
+            isStartingRecordingRef.current = false;
 
-            if (finalTranscript.trim()) {
+            if (hadError) {
+              console.log('Skipping onend message - error already handled');
+            } else if (finalTranscript.trim()) {
               addNote({
                 sourceId: currentSource?.id,
                 text: finalTranscript.trim(),
@@ -4095,28 +4608,43 @@
 
           recognition.onerror = (event) => {
             console.error('Speech recognition error:', event.error);
+            hadError = true;
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
-            if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+            if (event.error === 'network') {
+              window.WebSpeechAPI.markNetworkError();
+              playSound('error');
+              showToast('Network error - switching to offline mode...');
+              loadWhisperModel().then(success => {
+                if (success) {
+                  showToast('Offline mode ready! Try recording again.');
+                }
+              });
+            } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
               playSound('error');
               showToast('Microphone access denied');
             } else if (event.error === 'no-speech') {
               playSound('error');
               showToast('No speech detected - try again');
-            } else if (event.error === 'network') {
+            } else if (event.error === 'aborted') {
               playSound('error');
-              showToast('Network error - check your connection');
+              showToast('Speech recognition interrupted. Try again.');
+            } else if (event.error === 'audio-capture') {
+              playSound('error');
+              showToast('No microphone found. Check your audio settings.');
             } else {
               playSound('error');
-              showToast('Speech recognition error. Try again.');
+              showToast(`Speech recognition error: ${event.error}`);
             }
           };
 
           // Store recognition instance for stopRecording
           mediaRecorderRef.current = recognition;
 
+          console.log('Starting speech recognition...');
           recognition.start();
+          console.log('Speech recognition start() called');
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
           playSound('error');
@@ -4248,11 +4776,13 @@
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
                     onClick={handleVoiceButtonClick}
-                    disabled={false}
+                    disabled={!speechReady || whisperLoading}
+                    title={!speechReady ? 'Speech recognition not supported' : (useWhisperFallback ? 'Using offline mode' : '')}
                   >
                     {isRecording ? '⏹ Stop' :
+                     whisperLoading ? `Loading ${whisperProgress}%` :
                      isTranscribing ? 'Processing...' :
-                     <><Icons.Mic /> Voice</>}
+                     <><Icons.Mic /> Voice{useWhisperFallback ? ' (offline)' : ''}</>}
                   </button>
                   <button
                     className={`note-btn ${carMode ? 'car-mode' : ''}`}
@@ -4469,11 +4999,13 @@
                   <button
                     className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
                     onClick={handleVoiceButtonClick}
-                    disabled={false}
+                    disabled={!speechReady || whisperLoading}
+                    title={!speechReady ? 'Speech recognition not supported' : (useWhisperFallback ? 'Using offline mode' : '')}
                   >
                     {isRecording ? '⏹ Stop' :
+                     whisperLoading ? `Loading ${whisperProgress}%` :
                      isTranscribing ? 'Processing...' :
-                     <><Icons.Mic /> Voice</>}
+                     <><Icons.Mic /> Voice{useWhisperFallback ? ' (offline)' : ''}</>}
                   </button>
                   <button
                     className={`note-btn ${carMode ? 'car-mode' : ''}`}
