@@ -56,167 +56,175 @@
     window.WebSpeechAPI = webSpeechAPI;
     console.log('WebSpeechAPI initialized, supported:', webSpeechAPI.isSupported);
   </script>
-  <script type="module">
+  <script>
     // Whisper Speech Recognition using Transformers.js (fallback for when Web Speech API fails)
-    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+    // Uses dynamic import to avoid blocking page load if the CDN is unreachable
+    (function() {
+      let whisperPipeline = null;
+      let isLoadingModel = false;
+      let transformersModule = null;
 
-    // Configure transformers.js
-    env.allowLocalModels = false;
+      const whisperASR = {
+        isReady: false,
+        isLoading: false,
+        progress: 0,
+        error: null,
+        available: true, // Will be set to false if module fails to load
 
-    let whisperPipeline = null;
-    let isLoadingModel = false;
+        async loadModel(onProgress) {
+          if (whisperPipeline) {
+            this.isReady = true;
+            return true;
+          }
+          if (isLoadingModel) return false;
 
-    const whisperASR = {
-      isReady: false,
-      isLoading: false,
-      progress: 0,
-      error: null,
-
-      async loadModel(onProgress) {
-        if (whisperPipeline) {
-          this.isReady = true;
-          return true;
-        }
-        if (isLoadingModel) return false;
-
-        isLoadingModel = true;
-        this.isLoading = true;
-        this.error = null;
-
-        try {
-          console.log('Loading Whisper model...');
-          whisperPipeline = await pipeline(
-            'automatic-speech-recognition',
-            'Xenova/whisper-tiny.en',
-            {
-              progress_callback: (progress) => {
-                if (progress.status === 'progress') {
-                  this.progress = Math.round(progress.progress);
-                  if (onProgress) onProgress(this.progress);
-                }
-                console.log('Model load progress:', progress);
-              }
-            }
-          );
-          console.log('Whisper model loaded successfully');
-          this.isReady = true;
-          this.isLoading = false;
-          isLoadingModel = false;
-          return true;
-        } catch (error) {
-          console.error('Failed to load Whisper model:', error);
-          this.error = error.message;
-          this.isLoading = false;
-          isLoadingModel = false;
-          return false;
-        }
-      },
-
-      async transcribe(audioBlob) {
-        if (!whisperPipeline) {
-          throw new Error('Whisper model not loaded');
-        }
-
-        try {
-          console.log('Transcribing audio...', audioBlob.size, 'bytes, type:', audioBlob.type);
-
-          // Decode audio blob to raw audio samples using Web Audio API
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          console.log('ArrayBuffer size:', arrayBuffer.byteLength);
-
-          // Try different sample rates - some browsers need native rate first
-          let audioContext;
-          let audioBuffer;
+          isLoadingModel = true;
+          this.isLoading = true;
+          this.error = null;
 
           try {
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume();
+            // Dynamically import transformers.js only when needed
+            if (!transformersModule) {
+              console.log('Loading Transformers.js module...');
+              transformersModule = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1');
+              transformersModule.env.allowLocalModels = false;
+              console.log('Transformers.js module loaded');
             }
-            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-            console.log('Decoded at native rate:', audioBuffer.sampleRate, 'Hz');
-          } catch (e) {
-            console.log('Native decode failed, trying 16kHz:', e.message);
-            if (audioContext) await audioContext.close().catch(() => {});
-            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume();
-            }
-            audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+            console.log('Loading Whisper model...');
+            whisperPipeline = await transformersModule.pipeline(
+              'automatic-speech-recognition',
+              'Xenova/whisper-tiny.en',
+              {
+                progress_callback: (progress) => {
+                  if (progress.status === 'progress') {
+                    this.progress = Math.round(progress.progress);
+                    if (onProgress) onProgress(this.progress);
+                  }
+                  console.log('Model load progress:', progress);
+                }
+              }
+            );
+            console.log('Whisper model loaded successfully');
+            this.isReady = true;
+            this.isLoading = false;
+            isLoadingModel = false;
+            return true;
+          } catch (error) {
+            console.error('Failed to load Whisper model:', error);
+            this.error = error.message;
+            this.isLoading = false;
+            isLoadingModel = false;
+            return false;
+          }
+        },
+
+        async transcribe(audioBlob) {
+          if (!whisperPipeline) {
+            throw new Error('Whisper model not loaded');
           }
 
-          // Get audio data as Float32Array (mono for Whisper)
-          let audioData;
-          if (audioBuffer.numberOfChannels > 1) {
-            const left = audioBuffer.getChannelData(0);
-            const right = audioBuffer.getChannelData(1);
-            audioData = new Float32Array(left.length);
-            for (let i = 0; i < left.length; i++) {
-              audioData[i] = (left[i] + right[i]) / 2;
+          try {
+            console.log('Transcribing audio...', audioBlob.size, 'bytes, type:', audioBlob.type);
+
+            // Decode audio blob to raw audio samples using Web Audio API
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            console.log('ArrayBuffer size:', arrayBuffer.byteLength);
+
+            // Try different sample rates - some browsers need native rate first
+            let audioContext;
+            let audioBuffer;
+
+            try {
+              audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+              console.log('Decoded at native rate:', audioBuffer.sampleRate, 'Hz');
+            } catch (e) {
+              console.log('Native decode failed, trying 16kHz:', e.message);
+              if (audioContext) await audioContext.close().catch(() => {});
+              audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+              if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+              }
+              audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
             }
-          } else {
-            audioData = audioBuffer.getChannelData(0);
-          }
 
-          // Resample to 16kHz if needed (Whisper requires 16kHz)
-          if (audioBuffer.sampleRate !== 16000) {
-            console.log('Resampling from', audioBuffer.sampleRate, 'to 16000 Hz');
-            const ratio = audioBuffer.sampleRate / 16000;
-            const newLength = Math.round(audioData.length / ratio);
-            const resampled = new Float32Array(newLength);
-            for (let i = 0; i < newLength; i++) {
-              const srcIndex = Math.floor(i * ratio);
-              resampled[i] = audioData[srcIndex];
+            // Get audio data as Float32Array (mono for Whisper)
+            let audioData;
+            if (audioBuffer.numberOfChannels > 1) {
+              const left = audioBuffer.getChannelData(0);
+              const right = audioBuffer.getChannelData(1);
+              audioData = new Float32Array(left.length);
+              for (let i = 0; i < left.length; i++) {
+                audioData[i] = (left[i] + right[i]) / 2;
+              }
+            } else {
+              audioData = audioBuffer.getChannelData(0);
             }
-            audioData = resampled;
+
+            // Resample to 16kHz if needed (Whisper requires 16kHz)
+            if (audioBuffer.sampleRate !== 16000) {
+              console.log('Resampling from', audioBuffer.sampleRate, 'to 16000 Hz');
+              const ratio = audioBuffer.sampleRate / 16000;
+              const newLength = Math.round(audioData.length / ratio);
+              const resampled = new Float32Array(newLength);
+              for (let i = 0; i < newLength; i++) {
+                const srcIndex = Math.floor(i * ratio);
+                resampled[i] = audioData[srcIndex];
+              }
+              audioData = resampled;
+            }
+
+            console.log('Audio ready:', audioData.length, 'samples at 16kHz');
+
+            if (audioData.length < 1600) {
+              throw new Error('Audio too short');
+            }
+
+            const result = await whisperPipeline(audioData, {
+              chunk_length_s: 30,
+              stride_length_s: 5,
+              language: 'english',
+              task: 'transcribe',
+              sampling_rate: 16000,
+            });
+            console.log('Transcription result:', result);
+            await audioContext.close();
+            return result.text || '';
+          } catch (error) {
+            console.error('Transcription error:', error);
+            throw error;
           }
+        },
 
-          console.log('Audio ready:', audioData.length, 'samples at 16kHz');
-
-          if (audioData.length < 1600) {
-            throw new Error('Audio too short');
+        getSupportedMimeType() {
+          const types = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/mp4',
+            'audio/ogg;codecs=opus',
+            'audio/ogg',
+            'audio/wav',
+            'audio/mpeg',
+            ''
+          ];
+          for (const type of types) {
+            if (type === '' || MediaRecorder.isTypeSupported(type)) {
+              console.log('Using audio format:', type || 'browser default');
+              return type;
+            }
           }
-
-          const result = await whisperPipeline(audioData, {
-            chunk_length_s: 30,
-            stride_length_s: 5,
-            language: 'english',
-            task: 'transcribe',
-            sampling_rate: 16000,
-          });
-          console.log('Transcription result:', result);
-          await audioContext.close();
-          return result.text || '';
-        } catch (error) {
-          console.error('Transcription error:', error);
-          throw error;
+          return '';
         }
-      },
+      };
 
-      getSupportedMimeType() {
-        const types = [
-          'audio/webm;codecs=opus',
-          'audio/webm',
-          'audio/mp4',
-          'audio/ogg;codecs=opus',
-          'audio/ogg',
-          'audio/wav',
-          'audio/mpeg',
-          ''
-        ];
-        for (const type of types) {
-          if (type === '' || MediaRecorder.isTypeSupported(type)) {
-            console.log('Using audio format:', type || 'browser default');
-            return type;
-          }
-        }
-        return '';
-      }
-    };
-
-    // Make it globally available
-    window.WhisperASR = whisperASR;
-    console.log('WhisperASR fallback initialized');
+      // Make it globally available
+      window.WhisperASR = whisperASR;
+      console.log('WhisperASR fallback initialized (lazy-loading enabled)');
+    })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
