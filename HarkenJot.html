@@ -1890,6 +1890,124 @@
       }
     };
 
+    // Media Session API utility for Android Auto / lock screen controls
+    const MediaSessionManager = {
+      // Silent audio element for TTS media session activation
+      silentAudio: null,
+
+      // Initialize silent audio for TTS (creates an inaudible audio loop to activate media session)
+      initSilentAudio: () => {
+        if (MediaSessionManager.silentAudio) return MediaSessionManager.silentAudio;
+
+        // Create a short silent audio using a data URI (tiny silent WAV)
+        const silentWav = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        const audio = new Audio(silentWav);
+        audio.loop = true;
+        audio.volume = 0.01; // Near-silent but not zero (some browsers ignore zero)
+        MediaSessionManager.silentAudio = audio;
+        return audio;
+      },
+
+      // Set metadata for the current media
+      setMetadata: ({ title, artist, album, artwork }) => {
+        if (!('mediaSession' in navigator)) return;
+
+        try {
+          const metadata = {
+            title: title || 'Unknown',
+            artist: artist || 'HarkenJot',
+            album: album || ''
+          };
+
+          // Add artwork if provided
+          if (artwork) {
+            metadata.artwork = [
+              { src: artwork, sizes: '96x96', type: 'image/png' },
+              { src: artwork, sizes: '128x128', type: 'image/png' },
+              { src: artwork, sizes: '192x192', type: 'image/png' },
+              { src: artwork, sizes: '256x256', type: 'image/png' },
+              { src: artwork, sizes: '384x384', type: 'image/png' },
+              { src: artwork, sizes: '512x512', type: 'image/png' }
+            ];
+          }
+
+          navigator.mediaSession.metadata = new MediaMetadata(metadata);
+        } catch (err) {
+          console.log('Media Session metadata error:', err);
+        }
+      },
+
+      // Set playback state
+      setPlaybackState: (state) => {
+        if (!('mediaSession' in navigator)) return;
+        try {
+          navigator.mediaSession.playbackState = state; // 'playing', 'paused', 'none'
+        } catch (err) {
+          console.log('Media Session playback state error:', err);
+        }
+      },
+
+      // Set position state for seekable media
+      setPositionState: ({ duration, position, playbackRate }) => {
+        if (!('mediaSession' in navigator)) return;
+        try {
+          if (duration && isFinite(duration) && duration > 0) {
+            navigator.mediaSession.setPositionState({
+              duration: duration,
+              position: Math.min(position || 0, duration),
+              playbackRate: playbackRate || 1
+            });
+          }
+        } catch (err) {
+          console.log('Media Session position error:', err);
+        }
+      },
+
+      // Set action handlers
+      setActionHandlers: ({ onPlay, onPause, onSeekBackward, onSeekForward, onPreviousTrack, onNextTrack }) => {
+        if (!('mediaSession' in navigator)) return;
+
+        const handlers = [
+          ['play', onPlay],
+          ['pause', onPause],
+          ['seekbackward', onSeekBackward],
+          ['seekforward', onSeekForward],
+          ['previoustrack', onPreviousTrack],
+          ['nexttrack', onNextTrack]
+        ];
+
+        handlers.forEach(([action, handler]) => {
+          try {
+            navigator.mediaSession.setActionHandler(action, handler || null);
+          } catch (err) {
+            console.log(`Media Session handler '${action}' not supported:`, err);
+          }
+        });
+      },
+
+      // Clear all handlers
+      clearHandlers: () => {
+        if (!('mediaSession' in navigator)) return;
+
+        const actions = ['play', 'pause', 'seekbackward', 'seekforward', 'previoustrack', 'nexttrack'];
+        actions.forEach(action => {
+          try {
+            navigator.mediaSession.setActionHandler(action, null);
+          } catch (err) {
+            // Ignore errors when clearing
+          }
+        });
+      },
+
+      // Stop silent audio (for TTS cleanup)
+      stopSilentAudio: () => {
+        if (MediaSessionManager.silentAudio) {
+          MediaSessionManager.silentAudio.pause();
+          MediaSessionManager.silentAudio.currentTime = 0;
+        }
+      }
+    };
+
     // Migrate localStorage from old 'marginalia_' keys to new 'harkenjot_' keys
     (function migrateLocalStorage() {
       const migrations = [
@@ -2101,7 +2219,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.6.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3004,6 +3122,90 @@
         }
       }, [speed, currentSource?.id]);
 
+      // Media Session API for Android Auto / lock screen controls (TTS)
+      useEffect(() => {
+        if (!('mediaSession' in navigator)) return;
+
+        if (content && currentSource) {
+          // Set up action handlers for TTS
+          MediaSessionManager.setActionHandlers({
+            onPlay: () => {
+              if (!isPlaying && speakFromIndexRef.current) {
+                speakFromIndexRef.current(currentSentenceIndex);
+              }
+            },
+            onPause: () => {
+              if (isPlaying) {
+                wasCancelledRef.current = true;
+                window.speechSynthesis.cancel();
+                setIsPlaying(false);
+                releaseWakeLock();
+              }
+            },
+            onSeekBackward: () => skipBack(),
+            onSeekForward: () => skipForward(),
+            onPreviousTrack: () => {
+              // Go to beginning
+              wasCancelledRef.current = true;
+              window.speechSynthesis.cancel();
+              setCurrentSentenceIndex(0);
+              if (isPlaying && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(0), 50);
+              }
+            },
+            onNextTrack: null
+          });
+
+          // Set metadata
+          MediaSessionManager.setMetadata({
+            title: content.title || currentSource.title || 'Article',
+            artist: currentSource.siteName || 'HarkenJot Reader',
+            album: currentSource.type === 'pdf' ? 'PDF' : 'Article',
+            artwork: null
+          });
+        }
+
+        return () => {
+          MediaSessionManager.clearHandlers();
+        };
+      }, [content, currentSource]);
+
+      // Start/stop silent audio and update playback state for TTS media session
+      useEffect(() => {
+        if (!('mediaSession' in navigator)) return;
+
+        if (isPlaying && content) {
+          // Start silent audio to activate media session
+          const silentAudio = MediaSessionManager.initSilentAudio();
+          silentAudio.play().catch(err => console.log('Silent audio play error:', err));
+          MediaSessionManager.setPlaybackState('playing');
+        } else {
+          MediaSessionManager.stopSilentAudio();
+          if (content) {
+            MediaSessionManager.setPlaybackState('paused');
+          }
+        }
+
+        return () => {
+          MediaSessionManager.stopSilentAudio();
+        };
+      }, [isPlaying, content]);
+
+      // Update Media Session position state for TTS (sentence-based progress)
+      useEffect(() => {
+        if (!('mediaSession' in navigator) || !content) return;
+
+        // Approximate duration: 3 seconds per sentence at 1x speed
+        const estimatedDuration = content.sentences.length * 3;
+        const estimatedPosition = currentSentenceIndex * 3;
+
+        MediaSessionManager.setPositionState({
+          duration: estimatedDuration,
+          position: estimatedPosition,
+          playbackRate: speed
+        });
+      }, [currentSentenceIndex, content, speed]);
+
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
@@ -3889,6 +4091,73 @@
       useEffect(() => {
         wasPlayingRef.current = isPlaying;
       }, [isPlaying]);
+
+      // Media Session API for Android Auto / lock screen controls (podcasts and YouTube)
+      useEffect(() => {
+        if (!('mediaSession' in navigator)) return;
+
+        // Set up action handlers based on current media type
+        if (podcastAudio) {
+          // Podcast: Use HTML5 audio element
+          MediaSessionManager.setActionHandlers({
+            onPlay: () => audioPlayerRef.current?.play(),
+            onPause: () => audioPlayerRef.current?.pause(),
+            onSeekBackward: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime -= 15; },
+            onSeekForward: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime += 15; },
+            onPreviousTrack: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime = 0; },
+            onNextTrack: null
+          });
+
+          // Set metadata
+          MediaSessionManager.setMetadata({
+            title: podcastAudio.title || 'Podcast',
+            artist: podcastAudio.showName || 'HarkenJot',
+            album: 'Podcast',
+            artwork: podcastAudio.artworkUrl || null
+          });
+        } else if (videoId && playerRef.current) {
+          // YouTube: Use YouTube player
+          MediaSessionManager.setActionHandlers({
+            onPlay: () => playerRef.current?.playVideo(),
+            onPause: () => playerRef.current?.pauseVideo(),
+            onSeekBackward: () => skipTime(-15),
+            onSeekForward: () => skipTime(15),
+            onPreviousTrack: () => playerRef.current?.seekTo(0, true),
+            onNextTrack: null
+          });
+
+          // Set metadata for YouTube
+          MediaSessionManager.setMetadata({
+            title: currentSource?.title || 'YouTube Video',
+            artist: 'YouTube',
+            album: 'HarkenJot',
+            artwork: currentSource?.thumbnail || null
+          });
+        }
+
+        // Cleanup handlers when unmounting or switching media
+        return () => {
+          MediaSessionManager.clearHandlers();
+        };
+      }, [podcastAudio, videoId, currentSource]);
+
+      // Update Media Session playback state when playing status changes
+      useEffect(() => {
+        if (podcastAudio || videoId) {
+          MediaSessionManager.setPlaybackState(isPlaying ? 'playing' : 'paused');
+        }
+      }, [isPlaying, podcastAudio, videoId]);
+
+      // Update Media Session position state when time/duration changes
+      useEffect(() => {
+        if ((podcastAudio || videoId) && duration > 0) {
+          MediaSessionManager.setPositionState({
+            duration: duration,
+            position: currentTime,
+            playbackRate: speed
+          });
+        }
+      }, [currentTime, duration, speed, podcastAudio, videoId]);
 
       // Resume YouTube playback after car mode changes if it was playing
       useEffect(() => {
