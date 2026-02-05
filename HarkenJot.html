@@ -2219,7 +2219,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4907,6 +4907,17 @@
               showToast('Transcription failed. Try again.');
             }
             setIsTranscribing(false);
+
+            // Resume playback if it was playing before recording
+            if (wasPlayingRef.current) {
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.play();
+                requestWakeLock();
+              }
+              if (playerRef.current) {
+                playerRef.current.playVideo();
+              }
+            }
           };
 
           mediaRecorder.start(100);
@@ -5021,6 +5032,17 @@
             } else {
               playSound('error');
               showToast('No speech detected - try speaking louder');
+            }
+
+            // Resume playback if it was playing before recording
+            if (wasPlayingRef.current) {
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.play();
+                requestWakeLock();
+              }
+              if (playerRef.current) {
+                playerRef.current.playVideo();
+              }
             }
           };
 
