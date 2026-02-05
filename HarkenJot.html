@@ -4761,7 +4761,7 @@
       };
 
       // Start recording using Whisper (MediaRecorder-based) with silence detection
-      const startWhisperRecording = async (recordingTime) => {
+      const startWhisperRecording = async (wasPlaying, recordingTime) => {
         try {
           const audioConstraints = {
             audio: {
@@ -4910,8 +4910,8 @@
             }
             setIsTranscribing(false);
 
-            // Resume playback if it was playing before recording
-            if (wasPlayingRef.current) {
+            // Resume playback if it was playing before recording (use passed parameter, not ref)
+            if (wasPlaying) {
               if (audioPlayerRef.current) {
                 audioPlayerRef.current.play();
                 requestWakeLock();
@@ -4956,8 +4956,9 @@
 
         stopRecording();
 
-        // Save playing state BEFORE pausing for auto-resume after note
-        wasPlayingRef.current = isPlaying;
+        // Capture playing state in local variable BEFORE pausing (closures will preserve this)
+        const wasPlaying = isPlaying;
+        const recordingTime = currentTime;
 
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
@@ -4965,8 +4966,6 @@
         if (isPlaying && audioPlayerRef.current) {
           audioPlayerRef.current.pause();
         }
-
-        const recordingTime = currentTime;
 
         // Use Whisper if fallback is enabled or Web Speech has had network errors
         if (useWhisperFallback || window.WebSpeechAPI?.hasNetworkError) {
@@ -4977,7 +4976,7 @@
               return;
             }
           }
-          await startWhisperRecording(recordingTime);
+          await startWhisperRecording(wasPlaying, recordingTime);
           return;
         }
 
@@ -5039,8 +5038,8 @@
               showToast('No speech detected - try speaking louder');
             }
 
-            // Resume playback if it was playing before recording
-            if (wasPlayingRef.current) {
+            // Resume playback if it was playing before recording (use local variable from closure)
+            if (wasPlaying) {
               if (audioPlayerRef.current) {
                 audioPlayerRef.current.play();
                 requestWakeLock();
@@ -5081,6 +5080,17 @@
             } else {
               playSound('error');
               showToast(`Speech recognition error: ${event.error}`);
+            }
+
+            // Resume playback even on error (use local variable from closure)
+            if (wasPlaying) {
+              if (audioPlayerRef.current) {
+                audioPlayerRef.current.play();
+                requestWakeLock();
+              }
+              if (playerRef.current) {
+                playerRef.current.playVideo();
+              }
             }
           };
 
