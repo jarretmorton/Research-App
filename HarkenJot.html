@@ -2219,7 +2219,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3301,7 +3301,7 @@
           let silenceStart = null;
           let hasDetectedSpeech = false;
           const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
-          const SILENCE_DURATION = 2000; // Stop after 2 seconds of silence
+          const SILENCE_DURATION = 1000; // Stop after 1 second of silence
           const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
           const recordingStartTime = Date.now();
 
@@ -4789,7 +4789,7 @@
           let silenceStart = null;
           let hasDetectedSpeech = false;
           const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
-          const SILENCE_DURATION = 2000; // Stop after 2 seconds of silence
+          const SILENCE_DURATION = 1000; // Stop after 1 second of silence
           const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
           const recordingStartTime = Date.now();
 
