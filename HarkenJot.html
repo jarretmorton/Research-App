@@ -4081,9 +4081,8 @@
 
         return () => {
           document.removeEventListener('visibilitychange', handleVisibilityChange);
-          if (isPlaying && playerRef.current) {
-            playerRef.current.pauseVideo();
-          }
+          // Note: Removed pauseVideo() from cleanup - it was causing YouTube to stop
+          // immediately after resuming because this cleanup runs on every isPlaying change
         };
       }, [isPlaying, showToast]);
 
