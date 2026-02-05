@@ -4087,10 +4087,12 @@
         };
       }, [isPlaying, showToast]);
 
-      // Track playing state before car mode changes
+      // Track playing state before car mode changes (but not during recording)
       useEffect(() => {
-        wasPlayingRef.current = isPlaying;
-      }, [isPlaying]);
+        if (!isRecording && !isTranscribing) {
+          wasPlayingRef.current = isPlaying;
+        }
+      }, [isPlaying, isRecording, isTranscribing]);
 
       // Media Session API for Android Auto / lock screen controls (podcasts and YouTube)
       useEffect(() => {
