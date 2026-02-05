@@ -4954,6 +4954,9 @@
 
         stopRecording();
 
+        // Save playing state BEFORE pausing for auto-resume after note
+        wasPlayingRef.current = isPlaying;
+
         if (isPlaying && playerRef.current) {
           playerRef.current.pauseVideo();
         }
