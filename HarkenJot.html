@@ -5339,9 +5339,10 @@
                     updateSource(currentSource.id, { duration: dur });
                   }
                 }}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
+                onPlay={() => { setIsPlaying(true); requestWakeLock(); }}
+                onPause={() => { setIsPlaying(false); releaseWakeLock(); }}
                 onEnded={() => {
+                  releaseWakeLock();
                   // Auto-mark as read when podcast ends
                   if (currentSource?.id && !currentSource.isRead) {
                     updateSource(currentSource.id, { isRead: true });
