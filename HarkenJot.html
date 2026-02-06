@@ -2106,7 +2106,25 @@
 
       const addNote = (note) => {
         const newNote = { ...note, id: generateId(), createdAt: new Date().toISOString() };
-        setNotes(prev => [newNote, ...prev]);
+        setNotes(prev => {
+          // Insert note in sequential order among notes for the same source
+          const otherNotes = prev.filter(n => n.sourceId !== newNote.sourceId);
+          const sourceNotes = prev.filter(n => n.sourceId === newNote.sourceId);
+
+          // Find insertion index based on position (articles/PDFs) or timestamp (media)
+          let insertIdx = sourceNotes.length;
+          for (let i = 0; i < sourceNotes.length; i++) {
+            const existing = sourceNotes[i];
+            if (newNote.timestamp !== undefined && existing.timestamp !== undefined) {
+              if (newNote.timestamp < existing.timestamp) { insertIdx = i; break; }
+            } else if (newNote.position !== undefined && existing.position !== undefined) {
+              if (newNote.position < existing.position) { insertIdx = i; break; }
+            }
+          }
+
+          sourceNotes.splice(insertIdx, 0, newNote);
+          return [...sourceNotes, ...otherNotes];
+        });
         showToast('Note saved');
       };
 
@@ -2198,7 +2216,17 @@
         }, 5000);
       };
 
-      const currentNotes = notes.filter(n => n.sourceId === currentSource?.id);
+      const currentNotes = notes.filter(n => n.sourceId === currentSource?.id).sort((a, b) => {
+        // Sort notes sequentially by source position (earliest in source first)
+        if (a.timestamp !== undefined && b.timestamp !== undefined) {
+          return a.timestamp - b.timestamp;
+        }
+        if (a.position !== undefined && b.position !== undefined) {
+          return a.position - b.position;
+        }
+        // Fallback: maintain creation order
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      });
 
       // Determine if notes button should be enabled based on current tab and source type
       const isNotesAvailable = (() => {
@@ -2219,7 +2247,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.7.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5507,7 +5535,11 @@
         return acc;
       }, {});
 
-      const getNotesForSource = (sourceId) => notes.filter(n => n.sourceId === sourceId);
+      const getNotesForSource = (sourceId) => notes.filter(n => n.sourceId === sourceId).sort((a, b) => {
+        if (a.timestamp !== undefined && b.timestamp !== undefined) return a.timestamp - b.timestamp;
+        if (a.position !== undefined && b.position !== undefined) return a.position - b.position;
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      });
 
       const exportToOneNote = () => {
         const getFirstThreeWords = (text) => {
