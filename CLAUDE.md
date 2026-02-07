@@ -200,7 +200,7 @@ The current version is shown in the app header. Update it in the `App` component
 - Branches follow the pattern `claude/<description>-<id>`
 - Commit messages are concise and describe the "why" (e.g., "Fix podcast audio missing wake lock on play/pause/end")
 - PRs are merged via GitHub merge commits
-- After pushing a branch, always provide the GitHub PR creation link: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
+- **After every push**, always include the GitHub PR creation link in your response text so the in-app "View PR" button works: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
 
 ## Deployment
 
