@@ -201,6 +201,7 @@ The current version is shown in the app header. Update it in the `App` component
 - Commit messages are concise and describe the "why" (e.g., "Fix podcast audio missing wake lock on play/pause/end")
 - PRs are merged via GitHub merge commits
 - After pushing a branch, always provide the GitHub PR creation link: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
+- **After every push**, create or update the PR using `gh pr create` (or `gh pr edit` if one already exists for the branch). This ensures the in-app "Create PR" / "Update PR" button in Claude Code always reflects the latest pushed changes, not just the initial PR of the session. This allows merging directly from the GitHub mobile app at any point during the session.
 
 ## Deployment
 
