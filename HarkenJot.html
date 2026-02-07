@@ -4219,9 +4219,18 @@
         if (lowerUrl.match(/\.(mp3|m4a|ogg|wav|aac)(\?|$)/)) {
           return 'audio';
         }
-        // RSS feed URLs
+        // RSS feed URLs - match common patterns and podcast hosting domains
         if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
-            lowerUrl.includes('feeds.') || lowerUrl.includes('anchor.fm')) {
+            lowerUrl.match(/\b(feeds?|rss)\./i) || lowerUrl.includes('anchor.fm') ||
+            lowerUrl.includes('podcastfeeds.') || lowerUrl.includes('megaphone.fm') ||
+            lowerUrl.includes('omnycontent.com') || lowerUrl.includes('podbean.com') ||
+            lowerUrl.includes('acast.com') || lowerUrl.includes('buzzsprout.com') ||
+            lowerUrl.includes('simplecast.com') || lowerUrl.includes('libsyn.com') ||
+            lowerUrl.includes('spreaker.com') || lowerUrl.includes('podomatic.com') ||
+            lowerUrl.includes('art19.com') || lowerUrl.includes('transistor.fm') ||
+            lowerUrl.includes('captivate.fm') || lowerUrl.includes('redcircle.com') ||
+            lowerUrl.includes('audioboom.com') || lowerUrl.includes('pcdn.co') ||
+            lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com')) {
           return 'rss';
         }
         return null;
@@ -4323,8 +4332,9 @@
           const xml = parser.parseFromString(xmlText, 'text/xml');
           const items = xml.querySelectorAll('item');
 
-          // Extract channel artwork
+          // Extract channel info
           const channel = xml.querySelector('channel');
+          const channelTitle = channel?.querySelector(':scope > title')?.textContent || '';
           const itunesImage = channel?.getElementsByTagName('itunes:image')[0];
           const channelArtwork = itunesImage?.getAttribute('href') ||
                                  channel?.querySelector('image url')?.textContent || '';
@@ -4369,6 +4379,7 @@
                   audioUrl: audioUrl,
                   description: description,
                   artworkUrl: channelArtwork,
+                  channelTitle: channelTitle,
                   pubDate: item.querySelector('pubDate')?.textContent || '',
                   link: item.querySelector('link')?.textContent || ''
                 };
@@ -4388,6 +4399,7 @@
                 audioUrl: enclosure.getAttribute('url'),
                 description: description,
                 artworkUrl: channelArtwork,
+                channelTitle: channelTitle,
                 pubDate: firstItem.querySelector('pubDate')?.textContent || '',
                 link: firstItem.querySelector('link')?.textContent || ''
               };
@@ -4479,12 +4491,14 @@
             return;
           }
 
+          const showName = episode.channelTitle || 'Podcast';
+
           setVideoId(null);
           setArtworkFailed(false);
           setPodcastAudio({
             audioUrl: episode.audioUrl,
             title: episode.title,
-            showName: 'Podcast',
+            showName: showName,
             artworkUrl: episode.artworkUrl || '',
             link: episode.link || feedUrl
           });
@@ -4494,6 +4508,7 @@
             title: episode.title,
             url: feedUrl,
             audioUrl: episode.audioUrl,
+            showName: showName,
             artworkUrl: episode.artworkUrl || '',
             link: episode.link || feedUrl
           });
@@ -4575,6 +4590,21 @@
           setUrl(''); // Clear URL after successful load
           showToast('Audio loaded');
         } else {
+          // Unknown URL type - try loading as RSS feed before giving up
+          try {
+            const corsProxy = 'https://api.allorigins.win/raw?url=';
+            const response = await fetch(corsProxy + encodeURIComponent(url));
+            if (response.ok) {
+              const text = await response.text();
+              // Check if response looks like XML/RSS content
+              if (text.trim().startsWith('<?xml') || text.trim().startsWith('<rss') || text.includes('<channel>') || text.includes('<feed')) {
+                loadRSSFeed(url);
+                return;
+              }
+            }
+          } catch (e) {
+            // Fetch failed, fall through to error
+          }
           showToast('Please enter a YouTube, Spotify, or RSS feed URL');
         }
       };
@@ -5145,7 +5175,7 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste YouTube or podcast link..."
+                placeholder="Paste YouTube, podcast, or RSS feed link..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -5520,7 +5550,7 @@
             <div className="empty-state">
               <div className="empty-state-icon">🎙️</div>
               <h3>Media Player</h3>
-              <p>Paste a YouTube, Spotify, or podcast RSS link above to begin. The app will play it and let you take notes while you listen.</p>
+              <p>Paste a YouTube, Spotify, or podcast RSS feed link above to begin. The app will play it and let you take notes while you listen.</p>
             </div>
           )}
         </div>
