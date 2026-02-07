@@ -189,7 +189,11 @@ Notes reference their parent source via `sourceId`. Position anchoring differs b
 
 ### Version
 
-The current version is shown in the app header. Update it in the `App` component's JSX when making releases.
+The current version is shown in the app header. Update it in the `App` component's JSX. **Always increment the version number with every change** using semantic versioning (`MAJOR.MINOR.PATCH`):
+
+- **Patch** (`1.8.x` → `1.8.x+1`) — Small changes and bug fixes
+- **Minor** (`1.x.1` → `1.x+1.0`) — New features or functional enhancements
+- **Major** (`x.1.1` → `x+1.0.0`) — Only when explicitly requested by the user, or Claude may suggest a major bump for approval when a large portion of the codebase is affected
 
 ## Git Conventions
 
