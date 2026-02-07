@@ -2504,19 +2504,6 @@
         }
       }));
 
-      // Load currentSource into content when source is selected from library
-      useEffect(() => {
-        if (currentSource && (currentSource.type === 'article' || currentSource.type === 'pdf')) {
-          setContent({
-            title: currentSource.title,
-            sentences: currentSource.sentences,
-            url: currentSource.url
-          });
-          setCurrentSentenceIndex(0);
-          sentencesRef.current = currentSource.sentences;
-        }
-      }, [currentSource]);
-
       // Auto-scroll to current sentence when playing
       useEffect(() => {
         if (autoScroll && content) {
@@ -2709,6 +2696,18 @@
 
       const splitIntoSentences = (text) => {
         return text.match(/[^.!?]+[.!?]+/g) || [text];
+      };
+
+      const safeHostname = (url) => {
+        try {
+          return new URL(url).hostname;
+        } catch {
+          try {
+            return new URL('https://' + url).hostname;
+          } catch {
+            return url;
+          }
+        }
       };
 
       const extractArticleContent = (html) => {
@@ -3747,7 +3746,7 @@
                   </div>
                   <div className="source-meta">
                     <span className={`library-item-type ${currentSource?.type || 'article'}`}>{currentSource?.type || 'Article'}</span>
-                    {content.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(content.url).hostname}</span>}
+                    {content.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeHostname(content.url)}</span>}
                     <span>{content.sentences.length} sentences</span>
                     {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
@@ -5793,7 +5792,7 @@
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
                         {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
                         {source.type === 'youtube' && source.channelName && <span>{source.channelName}</span>}
-                        {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{new URL(source.url).hostname}</span>}
+                        {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeHostname(source.url)}</span>}
                         {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
                         {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
                         {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
