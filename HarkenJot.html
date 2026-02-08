@@ -531,9 +531,23 @@
       display: flex;
       align-items: center;
       gap: 0.75rem;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .source-meta .source-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .source-meta span:not(.source-name) {
+      flex-shrink: 0;
     }
 
     .source-meta a {
+      flex-shrink: 0;
       color: var(--accent);
       text-decoration: none;
     }
@@ -2258,7 +2272,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3745,7 +3759,7 @@
                   </div>
                   <div className="source-meta">
                     <span className={`library-item-type ${currentSource?.type || 'article'}`}>{currentSource?.type || 'Article'}</span>
-                    {content.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeHostname(content.url)}</span>}
+                    {content.url && <span className="source-name">{safeHostname(content.url)}</span>}
                     <span>{content.sentences.length} sentences</span>
                     {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
@@ -5204,7 +5218,7 @@
                     </div>
                     <div className="source-meta">
                       <span className="library-item-type youtube">YouTube</span>
-                      {currentSource.channelName && <span>{currentSource.channelName}</span>}
+                      {currentSource.channelName && <span className="source-name">{currentSource.channelName}</span>}
                       {duration > 0 && <span>{formatTime(duration)}</span>}
                       {currentSource.url && <a href={currentSource.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                     </div>
@@ -5347,7 +5361,7 @@
                   </div>
                   <div className="source-meta">
                     <span className="library-item-type podcast">Podcast</span>
-                    {podcastAudio.showName && <span>{podcastAudio.showName}</span>}
+                    {podcastAudio.showName && <span className="source-name">{podcastAudio.showName}</span>}
                     <span>{formatTime(duration)}</span>
                     {podcastAudio.link && <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
