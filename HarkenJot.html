@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.7</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4381,20 +4381,26 @@
 
       // Parse RSS feed and find episode
       const parseRSSAndFindEpisode = async (feedUrl, episodeTitle) => {
-        // Try multiple CORS proxies for reliability
-        const corsProxies = [
+        // Try direct fetch first (some feeds support CORS), then CORS proxies
+        const fetchStrategies = [
+          (u) => u,  // Direct fetch (no proxy)
           (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
           (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
           (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
         ];
 
         let xmlText = null;
-        for (const proxy of corsProxies) {
+        for (const strategy of fetchStrategies) {
           try {
-            const response = await fetch(proxy(feedUrl));
+            const response = await fetch(strategy(feedUrl));
             if (response.ok) {
-              xmlText = await response.text();
-              break;
+              const text = await response.text();
+              // Validate response is actually XML/RSS, not an HTML error page
+              if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
+                xmlText = text;
+                break;
+              }
+              console.log('CORS proxy returned non-XML response, trying next...');
             }
           } catch (e) {
             continue;
@@ -4402,13 +4408,21 @@
         }
 
         if (!xmlText) {
-          console.error('All CORS proxies failed for RSS feed:', feedUrl);
+          console.error('All fetch strategies failed for RSS feed:', feedUrl);
           return null;
         }
 
         try {
           const parser = new DOMParser();
           const xml = parser.parseFromString(xmlText, 'text/xml');
+
+          // Check for XML parse errors
+          const parseError = xml.querySelector('parsererror');
+          if (parseError) {
+            console.error('XML parse error:', parseError.textContent);
+            return null;
+          }
+
           const items = xml.querySelectorAll('item');
 
           // Extract channel info
@@ -4417,6 +4431,24 @@
           const itunesImage = channel?.getElementsByTagName('itunes:image')[0];
           const channelArtwork = itunesImage?.getAttribute('href') ||
                                  channel?.querySelector('image url')?.textContent || '';
+
+          // Helper to extract audio URL from an item (check enclosure and media:content)
+          const getAudioUrl = (item) => {
+            const enclosure = item.querySelector('enclosure');
+            const enclosureUrl = enclosure?.getAttribute('url');
+            if (enclosureUrl) return enclosureUrl;
+
+            // Fallback: check media:content elements for audio
+            const mediaContents = item.getElementsByTagName('media:content');
+            for (const mc of mediaContents) {
+              const mcUrl = mc.getAttribute('url');
+              const mcType = mc.getAttribute('type') || '';
+              if (mcUrl && (mcType.startsWith('audio/') || mcUrl.match(/\.(mp3|m4a|ogg|aac|wav)(\?|$)/i))) {
+                return mcUrl;
+              }
+            }
+            return null;
+          };
 
           // Try to find matching episode by title
           let bestMatch = null;
@@ -4428,8 +4460,7 @@
 
           items.forEach((item, index) => {
             const title = item.querySelector('title')?.textContent || '';
-            const enclosure = item.querySelector('enclosure');
-            const audioUrl = enclosure?.getAttribute('url');
+            const audioUrl = getAudioUrl(item);
 
             if (audioUrl) {
               // Score based on title similarity
@@ -4470,21 +4501,26 @@
 
           // If no good match, return first episode with audio
           if (!bestMatch && items.length > 0) {
-            const firstItem = items[0];
-            const enclosure = firstItem.querySelector('enclosure');
-            if (enclosure?.getAttribute('url')) {
-              const description = firstItem.querySelector('description')?.textContent || '';
-
-              bestMatch = {
-                title: firstItem.querySelector('title')?.textContent || 'Unknown Episode',
-                audioUrl: enclosure.getAttribute('url'),
-                description: description,
-                artworkUrl: channelArtwork,
-                channelTitle: channelTitle,
-                pubDate: firstItem.querySelector('pubDate')?.textContent || '',
-                link: firstItem.querySelector('link')?.textContent || ''
-              };
+            for (const item of items) {
+              const audioUrl = getAudioUrl(item);
+              if (audioUrl) {
+                const description = item.querySelector('description')?.textContent || '';
+                bestMatch = {
+                  title: item.querySelector('title')?.textContent || 'Unknown Episode',
+                  audioUrl: audioUrl,
+                  description: description,
+                  artworkUrl: channelArtwork,
+                  channelTitle: channelTitle,
+                  pubDate: item.querySelector('pubDate')?.textContent || '',
+                  link: item.querySelector('link')?.textContent || ''
+                };
+                break;
+              }
             }
+          }
+
+          if (!bestMatch) {
+            console.error(`RSS feed parsed but no episodes with audio found (${items.length} items in feed)`);
           }
 
           return bestMatch;
@@ -4531,7 +4567,10 @@
           // Step 3: Parse RSS and find episode
           const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
           if (!episode) {
-            showToast('Could not find episode in RSS feed');
+            // Show feed URL so user can try loading it directly as RSS
+            console.log('Failed feed URL:', rssInfo.feedUrl);
+            setUrl(rssInfo.feedUrl);
+            showToast('Could not find episode — feed URL pasted, try loading it directly');
             setIsLoadingPodcast(false);
             return;
           }
