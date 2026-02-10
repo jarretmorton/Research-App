@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.7</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4242,9 +4242,25 @@
           const response = await fetch(oembedUrl);
           if (!response.ok) throw new Error('Failed to fetch Spotify metadata');
           const data = await response.json();
+
+          // Extract show name from title using common separators
+          // oEmbed title may be "Show Name - Episode Title", "Episode Title", or other formats
+          let showName = data.title;
+          if (data.provider_name === 'Spotify') {
+            const separators = [' - ', ' — ', ' – ', ' | '];
+            for (const sep of separators) {
+              if (data.title.includes(sep)) {
+                showName = data.title.split(sep)[0].trim();
+                break;
+              }
+            }
+          } else {
+            showName = data.provider_name;
+          }
+
           return {
             title: data.title,
-            showName: data.provider_name === 'Spotify' ? data.title.split(' - ')[0] : data.provider_name,
+            showName: showName,
             thumbnailUrl: data.thumbnail_url
           };
         } catch (error) {
@@ -4255,15 +4271,60 @@
 
       // Search for RSS feed using podcast name
       const searchForRSSFeed = async (showName, episodeTitle) => {
+        const normalizeForMatch = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
         try {
-          // Use iTunes Search API to find podcast RSS feed
+          // Strategy 1: Search iTunes for the episode directly (most reliable)
+          if (episodeTitle) {
+            try {
+              const episodeQuery = encodeURIComponent(episodeTitle);
+              const episodeResponse = await fetch(`https://itunes.apple.com/search?term=${episodeQuery}&entity=podcastEpisode&limit=10`);
+              if (episodeResponse.ok) {
+                const episodeData = await episodeResponse.json();
+                if (episodeData.results && episodeData.results.length > 0) {
+                  const targetNorm = normalizeForMatch(episodeTitle);
+                  let bestResult = null;
+                  let bestScore = -1;
+
+                  for (const result of episodeData.results) {
+                    if (!result.feedUrl) continue;
+                    const resultNorm = normalizeForMatch(result.trackName || '');
+                    let score = 0;
+                    if (resultNorm === targetNorm) score = 100;
+                    else if (resultNorm.includes(targetNorm) || targetNorm.includes(resultNorm)) score = 80;
+                    else {
+                      const targetWords = targetNorm.split(/\s+/).filter(w => w.length > 3);
+                      targetWords.forEach(word => {
+                        if (resultNorm.includes(word)) score += 10;
+                      });
+                    }
+                    if (score > bestScore) {
+                      bestScore = score;
+                      bestResult = result;
+                    }
+                  }
+
+                  if (bestResult && bestScore > 0) {
+                    return {
+                      feedUrl: bestResult.feedUrl,
+                      podcastName: bestResult.collectionName,
+                      artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
+                    };
+                  }
+                }
+              }
+            } catch (e) {
+              console.log('Episode-level iTunes search failed, trying show search:', e);
+            }
+          }
+
+          // Strategy 2: Search by show name (original approach, fallback)
           const searchQuery = encodeURIComponent(showName);
           const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
           if (!response.ok) throw new Error('iTunes search failed');
           const data = await response.json();
 
           if (data.results && data.results.length > 0) {
-            // Return the first matching podcast's feed URL
             return {
               feedUrl: data.results[0].feedUrl,
               podcastName: data.results[0].collectionName,
@@ -4320,13 +4381,32 @@
 
       // Parse RSS feed and find episode
       const parseRSSAndFindEpisode = async (feedUrl, episodeTitle) => {
-        try {
-          // Use a CORS proxy for RSS feeds
-          const corsProxy = 'https://api.allorigins.win/raw?url=';
-          const response = await fetch(corsProxy + encodeURIComponent(feedUrl));
-          if (!response.ok) throw new Error('Failed to fetch RSS feed');
-          const xmlText = await response.text();
+        // Try multiple CORS proxies for reliability
+        const corsProxies = [
+          (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+          (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+          (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+        ];
 
+        let xmlText = null;
+        for (const proxy of corsProxies) {
+          try {
+            const response = await fetch(proxy(feedUrl));
+            if (response.ok) {
+              xmlText = await response.text();
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+
+        if (!xmlText) {
+          console.error('All CORS proxies failed for RSS feed:', feedUrl);
+          return null;
+        }
+
+        try {
           const parser = new DOMParser();
           const xml = parser.parseFromString(xmlText, 'text/xml');
           const items = xml.querySelectorAll('item');
@@ -4342,7 +4422,8 @@
           let bestMatch = null;
           let bestScore = 0;
 
-          const normalizeTitle = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, '');
+          // Keep spaces for word-level matching
+          const normalizeTitle = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
           const targetTitle = normalizeTitle(episodeTitle);
 
           items.forEach((item, index) => {
@@ -4355,13 +4436,14 @@
               const itemTitle = normalizeTitle(title);
               let score = 0;
 
-              // Check for substring match
-              if (itemTitle.includes(targetTitle) || targetTitle.includes(itemTitle)) {
+              // Check for substring match (using stripped versions for robustness)
+              const targetStripped = targetTitle.replace(/\s/g, '');
+              const itemStripped = itemTitle.replace(/\s/g, '');
+              if (itemStripped.includes(targetStripped) || targetStripped.includes(itemStripped)) {
                 score = 100;
               } else {
-                // Count matching words
+                // Count matching words (now works correctly since spaces are preserved)
                 const targetWords = targetTitle.split(/\s+/);
-                const itemWords = itemTitle.split(/\s+/);
                 targetWords.forEach(word => {
                   if (word.length > 3 && itemTitle.includes(word)) score += 10;
                 });
@@ -4418,10 +4500,18 @@
         showToast('Searching for podcast feed...');
 
         try {
+          // Extract timestamp from Spotify URL (e.g., t=758 means 758 seconds)
+          let startTime = null;
+          try {
+            const urlObj = new URL(url);
+            const t = urlObj.searchParams.get('t');
+            if (t) startTime = parseInt(t, 10);
+          } catch (e) { /* ignore URL parse errors */ }
+
           // Step 1: Get Spotify metadata
           const metadata = await fetchSpotifyMetadata(url);
           if (!metadata) {
-            showToast('Could not fetch Spotify metadata');
+            showToast('Could not fetch Spotify metadata - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
             return;
           }
@@ -4431,7 +4521,7 @@
           // Step 2: Search for RSS feed
           const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
           if (!rssInfo) {
-            showToast('Could not find RSS feed for this podcast');
+            showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
             return;
           }
@@ -4457,7 +4547,7 @@
             link: episode.link || url
           });
 
-          addSource({
+          const newSource = addSource({
             type: 'podcast',
             title: episode.title,
             url: url,
@@ -4466,6 +4556,13 @@
             artworkUrl: rssInfo.artworkUrl,
             link: episode.link || url
           });
+
+          // Save start timestamp so position restore picks it up
+          if (startTime && newSource) {
+            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+            savedPositions[newSource.id] = startTime;
+            localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
+          }
 
           setUrl(''); // Clear URL after successful load
           showToast('Podcast loaded!');
@@ -4591,10 +4688,19 @@
         } else {
           // Unknown URL type - try loading as RSS feed before giving up
           try {
-            const corsProxy = 'https://api.allorigins.win/raw?url=';
-            const response = await fetch(corsProxy + encodeURIComponent(url));
-            if (response.ok) {
-              const text = await response.text();
+            const corsProxies = [
+              (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+              (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+              (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+            ];
+            let text = null;
+            for (const proxy of corsProxies) {
+              try {
+                const response = await fetch(proxy(url));
+                if (response.ok) { text = await response.text(); break; }
+              } catch (e) { continue; }
+            }
+            if (text) {
               // Check if response looks like XML/RSS content
               if (text.trim().startsWith('<?xml') || text.trim().startsWith('<rss') || text.includes('<channel>') || text.includes('<feed')) {
                 loadRSSFeed(url);
