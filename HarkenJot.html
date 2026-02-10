@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4004,8 +4004,8 @@
           }
           lastInitializedSourceRef.current = currentSource.id;
 
-          // Check if audioUrl or spotifyEmbedId is available
-          if (!currentSource.audioUrl && !currentSource.spotifyEmbedId) {
+          // Check if audioUrl is missing (older sources might not have it)
+          if (!currentSource.audioUrl) {
             showToast('This podcast is missing its audio URL - please re-add it from the original link');
             setVideoId(null);
             setPodcastAudio(null);
@@ -4016,7 +4016,6 @@
           setArtworkFailed(false);
           setPodcastAudio({
             audioUrl: currentSource.audioUrl,
-            spotifyEmbedId: currentSource.spotifyEmbedId,
             title: currentSource.title,
             showName: currentSource.showName || '',
             artworkUrl: currentSource.artworkUrl || '',
@@ -4024,18 +4023,16 @@
           });
           setSpeed(currentSource.speed || 1);
           // Don't set URL - keep input clear after loading
-          // Restore saved position after audio loads (only for native audio)
-          if (currentSource.audioUrl) {
-            setTimeout(() => {
-              if (audioPlayerRef.current) {
-                const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-                const savedPosition = savedPositions[currentSource.id];
-                if (savedPosition) {
-                  audioPlayerRef.current.currentTime = savedPosition;
-                }
+          // Restore saved position after audio loads
+          setTimeout(() => {
+            if (audioPlayerRef.current) {
+              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+              const savedPosition = savedPositions[currentSource.id];
+              if (savedPosition) {
+                audioPlayerRef.current.currentTime = savedPosition;
               }
-            }, 500);
-          }
+            }
+          }, 500);
         } else {
           // Reset the ref when switching to a different type or no source
           lastInitializedSourceRef.current = null;
@@ -4560,35 +4557,7 @@
           // Step 2: Search for RSS feed
           const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
           if (!rssInfo) {
-            // Fallback: try loading as Spotify embed
-            const spotifyMatch = url.match(/episode\/([a-zA-Z0-9]+)/);
-            if (spotifyMatch) {
-              const spotifyEmbedId = spotifyMatch[1];
-              setVideoId(null);
-              setArtworkFailed(false);
-              setPodcastAudio({
-                spotifyEmbedId: spotifyEmbedId,
-                title: metadata.title,
-                showName: metadata.showName,
-                artworkUrl: metadata.thumbnailUrl || '',
-                link: url
-              });
-
-              addSource({
-                type: 'podcast',
-                title: metadata.title,
-                url: url,
-                spotifyEmbedId: spotifyEmbedId,
-                showName: metadata.showName,
-                artworkUrl: metadata.thumbnailUrl || '',
-                link: url
-              });
-
-              setUrl('');
-              showToast('RSS feed not found — loaded via Spotify embed');
-            } else {
-              showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
-            }
+            showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
             return;
           }
@@ -4598,37 +4567,10 @@
           // Step 3: Parse RSS and find episode
           const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
           if (!episode) {
-            // Fallback: try loading as Spotify embed
-            const spotifyMatch = url.match(/episode\/([a-zA-Z0-9]+)/);
-            if (spotifyMatch) {
-              const spotifyEmbedId = spotifyMatch[1];
-              setVideoId(null);
-              setArtworkFailed(false);
-              setPodcastAudio({
-                spotifyEmbedId: spotifyEmbedId,
-                title: metadata.title,
-                showName: metadata.showName,
-                artworkUrl: metadata.thumbnailUrl || rssInfo?.artworkUrl || '',
-                link: url
-              });
-
-              addSource({
-                type: 'podcast',
-                title: metadata.title,
-                url: url,
-                spotifyEmbedId: spotifyEmbedId,
-                showName: metadata.showName,
-                artworkUrl: metadata.thumbnailUrl || rssInfo?.artworkUrl || '',
-                link: url
-              });
-
-              setUrl('');
-              showToast('Loaded via Spotify embed (playback controls in embed)');
-            } else {
-              console.log('Failed feed URL:', rssInfo.feedUrl);
-              setUrl(rssInfo.feedUrl);
-              showToast('Could not find episode — feed URL pasted, try loading it directly');
-            }
+            // Show feed URL so user can try loading it directly as RSS
+            console.log('Failed feed URL:', rssInfo.feedUrl);
+            setUrl(rssInfo.feedUrl);
+            showToast('Could not find episode — feed URL pasted, try loading it directly');
             setIsLoadingPodcast(false);
             return;
           }
@@ -5558,50 +5500,38 @@
                 </div>
               </div>
 
-              {/* Audio element placed early so it loads before artwork (skip for Spotify embed) */}
-              {!podcastAudio.spotifyEmbedId && (
-                <audio
-                  ref={audioPlayerRef}
-                  src={podcastAudio.audioUrl}
-                  onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-                  onDurationChange={(e) => {
-                    const dur = e.target.duration;
-                    setDuration(dur);
-                    // Update source with duration for Library display
-                    if (currentSource?.id && dur && isFinite(dur)) {
-                      updateSource(currentSource.id, { duration: dur });
-                    }
-                  }}
-                  onPlay={() => { setIsPlaying(true); requestWakeLock(); }}
-                  onPause={() => { setIsPlaying(false); releaseWakeLock(); }}
-                  onEnded={() => {
-                    releaseWakeLock();
-                    // Auto-mark as read when podcast ends
-                    if (currentSource?.id && !currentSource.isRead) {
-                      updateSource(currentSource.id, { isRead: true });
-                    }
-                  }}
-                  onError={(e) => {
-                    console.error('Audio load error:', e.target.error);
-                    showToast('Failed to load audio - the URL may be blocked or unavailable');
-                  }}
-                  style={{ display: 'none' }}
-                />
-              )}
+              {/* Audio element placed early so it loads before artwork */}
+              <audio
+                ref={audioPlayerRef}
+                src={podcastAudio.audioUrl}
+                onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+                onDurationChange={(e) => {
+                  const dur = e.target.duration;
+                  setDuration(dur);
+                  // Update source with duration for Library display
+                  if (currentSource?.id && dur && isFinite(dur)) {
+                    updateSource(currentSource.id, { duration: dur });
+                  }
+                }}
+                onPlay={() => { setIsPlaying(true); requestWakeLock(); }}
+                onPause={() => { setIsPlaying(false); releaseWakeLock(); }}
+                onEnded={() => {
+                  releaseWakeLock();
+                  // Auto-mark as read when podcast ends
+                  if (currentSource?.id && !currentSource.isRead) {
+                    updateSource(currentSource.id, { isRead: true });
+                  }
+                }}
+                onError={(e) => {
+                  console.error('Audio load error:', e.target.error);
+                  showToast('Failed to load audio - the URL may be blocked or unavailable');
+                }}
+                style={{ display: 'none' }}
+              />
 
               {!carMode && (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: podcastAudio.spotifyEmbedId ? '0 0 auto' : '1 1 auto', minHeight: 0, overflow: podcastAudio.spotifyEmbedId ? 'visible' : 'hidden', alignItems: 'center' }}>
-                  {podcastAudio.spotifyEmbedId ? (
-                    <iframe
-                      src={`https://open.spotify.com/embed/episode/${podcastAudio.spotifyEmbedId}?utm_source=generator&theme=0`}
-                      width="100%"
-                      height="152"
-                      frameBorder="0"
-                      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                      loading="lazy"
-                      style={{ borderRadius: '12px', border: 'none' }}
-                    />
-                  ) : (!podcastAudio.artworkUrl || artworkFailed) ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', alignItems: 'center' }}>
+                  {(!podcastAudio.artworkUrl || artworkFailed) ? (
                     <button
                       onClick={fetchCoverArt}
                       disabled={isLoadingArtwork}
@@ -5661,7 +5591,6 @@
               )}
 
               <div className={`playback-bar ${carMode ? 'car-mode' : ''}`}>
-                {!podcastAudio.spotifyEmbedId && (
                 <div className="playback-controls">
                   <div className="transport-buttons">
                     <button
@@ -5723,7 +5652,6 @@
                     </div>
                   </div>
                 </div>
-                )}
 
                 <div className="note-controls">
                   <button
