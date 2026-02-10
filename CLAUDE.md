@@ -199,7 +199,7 @@ The current version is shown in the app header. Update it in the `App` component
 
 - Branches follow the pattern `claude/<description>-<id>`
 - Commit messages are concise and describe the "why" (e.g., "Fix podcast audio missing wake lock on play/pause/end")
-- **PR titles must include the new version number** (e.g., "v1.8.6 — Truncate long source names in metadata row")
+- **PR titles MUST ALWAYS include the new version number** as a prefix (e.g., "v1.8.7 — Fix podcast loading"). Never omit the version — every PR title starts with `vX.Y.Z — `
 - PRs are merged via GitHub merge commits
 - **CRITICAL: After EVERY `git push`, you MUST provide the GitHub PR URL.** This is non-negotiable. Always include the link in your response immediately after pushing:
   - PR creation link: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
