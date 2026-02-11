@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.12</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.13</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4411,17 +4411,24 @@
         for (const strategy of fetchStrategies) {
           try {
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 8000);
-            const response = await fetch(strategy(feedUrl), { signal: controller.signal });
-            clearTimeout(timeout);
-            if (response.ok) {
-              const text = await response.text();
-              // Validate response is actually XML/RSS, not an HTML error page
-              if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
-                xmlText = text;
-                break;
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            try {
+              const response = await fetch(strategy(feedUrl), { signal: controller.signal });
+              if (response.ok) {
+                const text = await response.text();
+                clearTimeout(timeoutId);
+                // Validate response is actually XML/RSS, not an HTML error page
+                if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
+                  xmlText = text;
+                  break;
+                }
+                console.log('CORS proxy returned non-XML response, trying next...');
+              } else {
+                clearTimeout(timeoutId);
               }
-              console.log('CORS proxy returned non-XML response, trying next...');
+            } catch (e) {
+              clearTimeout(timeoutId);
+              throw e;
             }
           } catch (e) {
             continue;
