@@ -4219,7 +4219,7 @@
           return 'audio';
         }
         // RSS feed URLs - match common patterns and podcast hosting domains
-        if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
+        if (lowerUrl.includes('.xml') || lowerUrl.match(/\.rss(\?|$)/) || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
             lowerUrl.match(/\b(feeds?|rss)\./i) || lowerUrl.includes('anchor.fm') ||
             lowerUrl.includes('podcastfeeds.') || lowerUrl.includes('megaphone.fm') ||
             lowerUrl.includes('omnycontent.com') || lowerUrl.includes('podbean.com') ||
@@ -4229,7 +4229,8 @@
             lowerUrl.includes('art19.com') || lowerUrl.includes('transistor.fm') ||
             lowerUrl.includes('captivate.fm') || lowerUrl.includes('redcircle.com') ||
             lowerUrl.includes('audioboom.com') || lowerUrl.includes('pcdn.co') ||
-            lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com')) {
+            lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com') ||
+            lowerUrl.includes('api.substack.com')) {
           return 'rss';
         }
         return null;
@@ -4493,6 +4494,17 @@
                 return mcUrl;
               }
             }
+
+            // Last resort: scan content:encoded or description HTML for audio URLs
+            // (some platforms like Substack embed audio in post HTML instead of enclosures)
+            const contentEncoded = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
+            const descriptionHtml = item.querySelector('description')?.textContent || '';
+            const htmlContent = contentEncoded || descriptionHtml;
+            if (htmlContent) {
+              // Match <audio> src, <source> src, or direct audio file links
+              const audioSrcMatch = htmlContent.match(/(?:src|href)=["']([^"']*?\.(?:mp3|m4a|ogg|aac|wav)(?:\?[^"']*)?)['"]/i);
+              if (audioSrcMatch) return audioSrcMatch[1];
+            }
             return null;
           };
 
@@ -4691,8 +4703,10 @@
 
         try {
           const episode = await parseRSSAndFindEpisode(feedUrl, '');
-          if (!episode) {
-            showToast('Could not find episodes in RSS feed');
+          if (!episode || episode.error) {
+            showToast(episode?.error === 'fetch_failed'
+              ? 'Could not fetch RSS feed — it may require a podcast app or be temporarily unavailable'
+              : 'Could not find episodes in RSS feed');
             setIsLoadingPodcast(false);
             return;
           }
