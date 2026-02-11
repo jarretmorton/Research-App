@@ -2280,7 +2280,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2735,16 +2735,81 @@
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
+        // Before removing scripts, extract structured data that may contain article content
+        let structuredTitle = null;
+        let structuredText = null;
+
+        // Try JSON-LD (used by Forbes, NYT, WaPo, and many news sites)
+        try {
+          const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+          for (const script of jsonLdScripts) {
+            try {
+              const data = JSON.parse(script.textContent);
+              // JSON-LD can be a single object or an array
+              const items = Array.isArray(data) ? data : [data];
+              for (const item of items) {
+                // Check @graph array (some sites nest articles in @graph)
+                const candidates = item['@graph'] ? [...item['@graph'], item] : [item];
+                for (const candidate of candidates) {
+                  const itemType = candidate['@type'];
+                  const isArticle = Array.isArray(itemType)
+                    ? itemType.some(t => /article|story|report|review|posting/i.test(t))
+                    : /article|story|report|review|posting/i.test(itemType || '');
+                  if (isArticle && candidate.articleBody) {
+                    structuredText = candidate.articleBody;
+                    structuredTitle = candidate.headline || candidate.name || null;
+                    break;
+                  }
+                }
+                if (structuredText) break;
+              }
+            } catch (e) { /* skip malformed JSON-LD */ }
+            if (structuredText) break;
+          }
+        } catch (e) { /* skip JSON-LD extraction errors */ }
+
+        // Try __NEXT_DATA__ (Next.js sites like Forbes)
+        if (!structuredText) {
+          try {
+            const nextDataScript = doc.querySelector('script#__NEXT_DATA__');
+            if (nextDataScript) {
+              const nextData = JSON.parse(nextDataScript.textContent);
+              // Walk the props tree looking for article body content
+              const findArticleBody = (obj, depth = 0) => {
+                if (!obj || depth > 8 || typeof obj !== 'object') return null;
+                // Look for common article body field names
+                for (const key of ['articleBody', 'body', 'content', 'articleContent']) {
+                  if (typeof obj[key] === 'string' && obj[key].length > 200) {
+                    return { text: obj[key], title: obj.title || obj.headline || null };
+                  }
+                }
+                // Recurse into sub-objects
+                for (const val of Object.values(obj)) {
+                  const result = findArticleBody(val, depth + 1);
+                  if (result) return result;
+                }
+                return null;
+              };
+              const found = findArticleBody(nextData?.props?.pageProps);
+              if (found) {
+                structuredText = found.text;
+                structuredTitle = found.title || null;
+              }
+            }
+          } catch (e) { /* skip __NEXT_DATA__ extraction errors */ }
+        }
+
         // Remove unwanted elements
         const removeSelectors = ['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript', '.ad', '.advertisement', '.sidebar', '.menu', '.navigation', '.comment', '.comments'];
         removeSelectors.forEach(selector => {
           doc.querySelectorAll(selector).forEach(el => el.remove());
         });
 
-        // Get the title
-        const title = doc.querySelector('title')?.textContent ||
+        // Get the title from multiple sources
+        const title = doc.querySelector('meta[property="og:title"]')?.content ||
                       doc.querySelector('h1')?.textContent ||
-                      doc.querySelector('meta[property="og:title"]')?.content ||
+                      doc.querySelector('title')?.textContent ||
+                      structuredTitle ||
                       'Untitled Article';
 
         // Try to find main content in order of preference
@@ -2757,9 +2822,13 @@
           '.entry-content',
           '.content',
           '.article-body',
+          '.article-body-container',
+          '.body-container',
           '.story-body',
+          '.story-content',
           '#content',
-          '#article'
+          '#article',
+          '#article-body'
         ];
 
         let contentElement = null;
@@ -2797,7 +2866,20 @@
           .replace(/\t+/g, ' ')           // Remove tabs
           .trim();
 
-        return { title: title.trim(), text };
+        // If DOM extraction yielded insufficient content, use structured data
+        let usedStructuredData = false;
+        if (text.length < 200 && structuredText) {
+          console.log('DOM extraction insufficient, using structured data (JSON-LD / __NEXT_DATA__)');
+          text = structuredText.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\t+/g, ' ').trim();
+          usedStructuredData = true;
+        }
+
+        // Prefer structured title when we fell back to structured data
+        const finalTitle = (usedStructuredData && structuredTitle)
+          ? structuredTitle.trim()
+          : title.trim();
+
+        return { title: finalTitle, text };
       };
 
       const fetchContent = async () => {
