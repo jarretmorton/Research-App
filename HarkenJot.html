@@ -1837,6 +1837,27 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // Detect PDF URLs by extension or known academic/research URL patterns
+    const isPdfUrl = (url) => {
+      const lower = url.toLowerCase();
+      // Direct .pdf extension or .pdf with query/hash params
+      if (lower.endsWith('.pdf') || /\.pdf[?#]/.test(lower)) return true;
+      // Known academic/research PDF URL patterns
+      const pdfPatterns = [
+        /arxiv\.org\/pdf\//,
+        /biorxiv\.org\/content\/.*\.full/,
+        /medrxiv\.org\/content\/.*\.full/,
+        /dl\.acm\.org\/doi\/pdf\//,
+        /openreview\.net\/pdf/,
+        /papers\.nips\.cc\/paper.*\/file\//,
+        /ieeexplore\.ieee\.org\/stamp\/stamp\.jsp/,
+        /ncbi\.nlm\.nih\.gov\/pmc\/articles\/.*\/pdf/,
+        /link\.springer\.com\/content\/pdf\//,
+        /pdfs\.semanticscholar\.org\//,
+      ];
+      return pdfPatterns.some(p => p.test(lower));
+    };
+
     // Toast Component
     function Toast({ message, show, onUndo, showUndo }) {
       return (
@@ -2259,7 +2280,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.8</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2784,95 +2805,173 @@
 
         setLoading(true);
 
-        try {
-          // Check if it's a PDF
-          if (url.toLowerCase().endsWith('.pdf') || url.toLowerCase().includes('.pdf')) {
-            try {
-              pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-              showToast('Loading PDF...');
+        // Helper: fetch URL as PDF binary data (direct + CORS proxy fallback)
+        const fetchPdfBinary = async (pdfUrl) => {
+          const proxies = [
+            (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+            (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+            (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+          ];
 
-              // Fetch PDF as binary data - try multiple methods
-              let pdfData;
-              const corsProxies = [
-                (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-                (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-                (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-              ];
+          let pdfData;
 
-              // Try direct fetch first
+          // Try direct fetch first
+          try {
+            console.log('Trying direct PDF fetch...');
+            const response = await fetch(pdfUrl, { mode: 'cors' });
+            if (response.ok) {
+              pdfData = await response.arrayBuffer();
+              console.log('Direct fetch succeeded');
+            }
+          } catch (e) {
+            console.log('Direct fetch failed:', e.message);
+          }
+
+          // Try proxies if direct failed
+          if (!pdfData) {
+            for (const proxyFn of proxies) {
               try {
-                console.log('Trying direct PDF fetch...');
-                const response = await fetch(url, { mode: 'cors' });
+                const proxyUrl = proxyFn(pdfUrl);
+                console.log('Trying proxy:', proxyUrl);
+                const response = await fetch(proxyUrl);
                 if (response.ok) {
                   pdfData = await response.arrayBuffer();
-                  console.log('Direct fetch succeeded');
+                  console.log('Proxy fetch succeeded:', pdfData.byteLength, 'bytes');
+                  break;
                 }
               } catch (e) {
-                console.log('Direct fetch failed:', e.message);
+                console.log('Proxy failed:', e.message);
               }
+            }
+          }
 
-              // Try proxies if direct failed
-              if (!pdfData) {
-                for (const proxyFn of corsProxies) {
-                  try {
-                    const proxyUrl = proxyFn(url);
-                    console.log('Trying proxy:', proxyUrl);
-                    const response = await fetch(proxyUrl);
-                    if (response.ok) {
-                      pdfData = await response.arrayBuffer();
-                      console.log('Proxy fetch succeeded:', pdfData.byteLength, 'bytes');
-                      break;
-                    }
-                  } catch (e) {
-                    console.log('Proxy failed:', e.message);
+          return pdfData;
+        };
+
+        // Helper: process PDF binary data into a source
+        const processPdfContent = async (pdfData, pdfUrl) => {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+          console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
+
+          const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+          console.log('PDF parsed:', pdf.numPages, 'pages');
+
+          let fullText = '';
+          for (let i = 1; i <= pdf.numPages; i++) {
+            if (pdf.numPages > 5) {
+              showToast(`Loading page ${i} of ${pdf.numPages}...`);
+            }
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+
+            // Smart text reconstruction using item positioning
+            let pageText = '';
+            let prevY = null;
+            let prevItemEnd = null;
+
+            for (const item of textContent.items) {
+              if (!item.str) continue;
+
+              const y = item.transform ? item.transform[5] : null;
+              const x = item.transform ? item.transform[4] : null;
+              const fontSize = item.transform
+                ? (Math.abs(item.transform[0]) || Math.abs(item.transform[3]) || 12)
+                : 12;
+
+              if (prevY !== null && y !== null) {
+                const yDiff = Math.abs(y - prevY);
+
+                if (yDiff > fontSize * 1.8) {
+                  // Large vertical gap — paragraph break
+                  pageText += '\n\n';
+                } else if (yDiff > fontSize * 0.3) {
+                  // New line — handle hyphenation
+                  if (pageText.endsWith('-')) {
+                    pageText = pageText.slice(0, -1);
+                  } else {
+                    pageText += ' ';
+                  }
+                } else if (!pageText.endsWith(' ') && !item.str.startsWith(' ')) {
+                  // Same line — add space between items if there's a horizontal gap
+                  if (prevItemEnd !== null && x !== null && (x - prevItemEnd) > fontSize * 0.15) {
+                    pageText += ' ';
                   }
                 }
               }
 
+              pageText += item.str;
+
+              if (item.transform) {
+                prevY = y;
+                prevItemEnd = x + (item.width || 0);
+              }
+            }
+
+            fullText += pageText.trim() + '\n\n';
+          }
+
+          // Clean up for sentence splitting — collapse to single-line text
+          fullText = fullText
+            .replace(/\n{2,}/g, '. ')
+            .replace(/\n/g, ' ')
+            .replace(/\.\s*\./g, '.')
+            .replace(/ {2,}/g, ' ')
+            .trim();
+
+          if (!fullText.trim()) {
+            showToast('PDF has no readable text. It may be scanned/image-based.');
+            setShowManualInput(true);
+            setLoading(false);
+            return;
+          }
+
+          // Try to get title from PDF metadata
+          let pdfTitle = 'PDF Document';
+          try {
+            const metadata = await pdf.getMetadata();
+            if (metadata?.info?.Title && metadata.info.Title.trim().length > 3) {
+              pdfTitle = metadata.info.Title.trim();
+            } else {
+              const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+              pdfTitle = urlSegment || 'PDF Document';
+            }
+          } catch (e) {
+            const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            pdfTitle = urlSegment || 'PDF Document';
+          }
+
+          const sentences = splitIntoSentences(fullText);
+          sentencesRef.current = sentences;
+
+          const newSource = addSource({
+            type: 'pdf',
+            title: pdfTitle,
+            url: pdfUrl,
+            content: fullText,
+            sentences: sentences
+          });
+
+          setContent({
+            title: newSource.title,
+            sentences: sentences,
+            url: pdfUrl
+          });
+          setUrl('');
+          showToast('PDF loaded successfully!');
+          setLoading(false);
+        };
+
+        try {
+          // Check if it's a PDF
+          if (isPdfUrl(url)) {
+            try {
+              showToast('Loading PDF...');
+              const pdfData = await fetchPdfBinary(url);
               if (!pdfData) {
                 throw new Error('All fetch methods failed');
               }
-
-              console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
-
-              // Load PDF from binary data
-              const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-              console.log('PDF parsed:', pdf.numPages, 'pages');
-
-              let fullText = '';
-              for (let i = 1; i <= pdf.numPages; i++) {
-                const page = await pdf.getPage(i);
-                const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
-                fullText += pageText + ' ';
-              }
-
-              if (!fullText.trim()) {
-                showToast('PDF has no readable text. It may be scanned/image-based.');
-                setShowManualInput(true);
-                setLoading(false);
-                return;
-              }
-
-              const sentences = splitIntoSentences(fullText);
-              sentencesRef.current = sentences;
-
-              const newSource = addSource({
-                type: 'pdf',
-                title: url.split('/').pop()?.replace('.pdf', '') || 'PDF Document',
-                url: url,
-                content: fullText,
-                sentences: sentences
-              });
-
-              setContent({
-                title: newSource.title,
-                sentences: sentences,
-                url: url
-              });
-              setUrl(''); // Clear URL after successful load
-              showToast('PDF loaded successfully!');
-              setLoading(false);
+              await processPdfContent(pdfData, url);
               return;
             } catch (error) {
               console.error('PDF fetch error:', error);
@@ -2932,6 +3031,25 @@
 
           if (!html) {
             throw lastError || new Error('All proxies failed');
+          }
+
+          // Check if the response is actually a PDF (not detected by URL pattern)
+          if (html.substring(0, 10).includes('%PDF-')) {
+            try {
+              showToast('PDF detected, loading...');
+              const pdfData = await fetchPdfBinary(url);
+              if (!pdfData) {
+                throw new Error('All PDF fetch methods failed');
+              }
+              await processPdfContent(pdfData, url);
+              return;
+            } catch (error) {
+              console.error('PDF fallback error:', error);
+              showToast('Could not load PDF. Try pasting content manually.');
+              setShowManualInput(true);
+              setLoading(false);
+              return;
+            }
           }
 
           const { title, text } = extractArticleContent(html);
