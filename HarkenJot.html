@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.9</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.10</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4278,7 +4278,40 @@
         const normalizeForMatch = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 
         try {
-          // Strategy 1: Search iTunes for the episode directly (most reliable)
+          // Strategy 1: Search by show name first to find the correct podcast
+          const searchQuery = encodeURIComponent(showName);
+          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results.length > 0) {
+              // Score results by show name similarity
+              const showNorm = normalizeForMatch(showName);
+              let bestResult = data.results[0]; // default to first
+              let bestScore = 0;
+              for (const result of data.results) {
+                if (!result.feedUrl) continue;
+                const resultNorm = normalizeForMatch(result.collectionName || '');
+                let score = 0;
+                if (resultNorm === showNorm) score = 100;
+                else if (resultNorm.includes(showNorm) || showNorm.includes(resultNorm)) score = 80;
+                else {
+                  const showWords = showNorm.split(/\s+/).filter(w => w.length > 2);
+                  showWords.forEach(word => { if (resultNorm.includes(word)) score += 10; });
+                }
+                if (score > bestScore) {
+                  bestScore = score;
+                  bestResult = result;
+                }
+              }
+              return {
+                feedUrl: bestResult.feedUrl,
+                podcastName: bestResult.collectionName,
+                artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
+              };
+            }
+          }
+
+          // Strategy 2: Search by episode title as fallback, but verify show name matches
           if (episodeTitle) {
             try {
               const episodeQuery = encodeURIComponent(episodeTitle);
@@ -4286,55 +4319,35 @@
               if (episodeResponse.ok) {
                 const episodeData = await episodeResponse.json();
                 if (episodeData.results && episodeData.results.length > 0) {
-                  const targetNorm = normalizeForMatch(episodeTitle);
-                  let bestResult = null;
-                  let bestScore = -1;
-
+                  const showNorm = normalizeForMatch(showName);
+                  // Prefer results whose show name matches
                   for (const result of episodeData.results) {
                     if (!result.feedUrl) continue;
-                    const resultNorm = normalizeForMatch(result.trackName || '');
-                    let score = 0;
-                    if (resultNorm === targetNorm) score = 100;
-                    else if (resultNorm.includes(targetNorm) || targetNorm.includes(resultNorm)) score = 80;
-                    else {
-                      const targetWords = targetNorm.split(/\s+/).filter(w => w.length > 3);
-                      targetWords.forEach(word => {
-                        if (resultNorm.includes(word)) score += 10;
-                      });
-                    }
-                    if (score > bestScore) {
-                      bestScore = score;
-                      bestResult = result;
+                    const resultShowNorm = normalizeForMatch(result.collectionName || '');
+                    if (resultShowNorm.includes(showNorm) || showNorm.includes(resultShowNorm)) {
+                      return {
+                        feedUrl: result.feedUrl,
+                        podcastName: result.collectionName,
+                        artworkUrl: result.artworkUrl600 || result.artworkUrl100
+                      };
                     }
                   }
-
-                  if (bestResult && bestScore > 0) {
+                  // No show name match — take first result with feedUrl as last resort
+                  const fallback = episodeData.results.find(r => r.feedUrl);
+                  if (fallback) {
                     return {
-                      feedUrl: bestResult.feedUrl,
-                      podcastName: bestResult.collectionName,
-                      artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
+                      feedUrl: fallback.feedUrl,
+                      podcastName: fallback.collectionName,
+                      artworkUrl: fallback.artworkUrl600 || fallback.artworkUrl100
                     };
                   }
                 }
               }
             } catch (e) {
-              console.log('Episode-level iTunes search failed, trying show search:', e);
+              console.log('Episode-level iTunes search failed:', e);
             }
           }
 
-          // Strategy 2: Search by show name (original approach, fallback)
-          const searchQuery = encodeURIComponent(showName);
-          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
-          if (!response.ok) throw new Error('iTunes search failed');
-          const data = await response.json();
-
-          if (data.results && data.results.length > 0) {
-            return {
-              feedUrl: data.results[0].feedUrl,
-              podcastName: data.results[0].collectionName,
-              artworkUrl: data.results[0].artworkUrl600 || data.results[0].artworkUrl100
-            };
-          }
           return null;
         } catch (error) {
           console.error('RSS search error:', error);
