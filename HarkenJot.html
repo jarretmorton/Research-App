@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.13</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.14</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4276,7 +4276,7 @@
       // Search for RSS feed using podcast name
       const searchForRSSFeed = async (showName, episodeTitle) => {
         const normalizeForMatch = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-        const cleanForSearch = (t) => t.replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27BF}|\u{FE00}-\u{FE0F}|\u{200D}|\u{20E3}|\u{E0020}-\u{E007F}]/gu, '').trim();
+        const cleanForSearch = (t) => t.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s+/g, ' ').trim();
 
         try {
           // Strategy 1: Search by show name first to find the correct podcast
@@ -4437,7 +4437,7 @@
 
         if (!xmlText) {
           console.error('All fetch strategies failed for RSS feed:', feedUrl);
-          return null;
+          return { error: 'fetch_failed' };
         }
 
         try {
@@ -4580,7 +4580,8 @@
             return;
           }
 
-          showToast(`Found: ${metadata.title}`);
+          console.log('Spotify metadata:', { title: metadata.title, showName: metadata.showName, episodeTitle: metadata.episodeTitle });
+          showToast(`Show: "${metadata.showName}" — Episode: "${metadata.episodeTitle}"`);
 
           // Step 2: Search for RSS feed
           const rssInfo = await searchForRSSFeed(metadata.showName, metadata.episodeTitle);
@@ -4594,11 +4595,14 @@
 
           // Step 3: Parse RSS and find episode
           const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.episodeTitle);
-          if (!episode) {
-            // Show feed URL so user can try loading it directly as RSS
+          if (!episode || episode.error) {
             console.log('Failed feed URL:', rssInfo.feedUrl);
             setUrl(rssInfo.feedUrl);
-            showToast('Could not find episode — feed URL pasted, try loading it directly');
+            if (episode?.error === 'fetch_failed') {
+              showToast('Could not fetch RSS feed — feed URL pasted, try loading it directly');
+            } else {
+              showToast('Episode not found in RSS feed — feed URL pasted, try loading it directly');
+            }
             setIsLoadingPodcast(false);
             return;
           }
