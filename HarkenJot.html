@@ -3064,59 +3064,59 @@
             }
           }
 
-          // For web articles, try multiple CORS proxies
+          // Helper: fetch HTML via CORS proxies
+          const fetchHtmlViaProxies = async (targetUrl) => {
+            const corsProxies = [
+              {
+                name: 'allorigins',
+                url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+                extract: (data) => data.contents
+              },
+              {
+                name: 'corsproxy.io',
+                url: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+                extract: (data) => data
+              },
+              {
+                name: 'codetabs',
+                url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+                extract: (data) => data
+              }
+            ];
+
+            for (const proxy of corsProxies) {
+              try {
+                console.log(`Trying ${proxy.name} proxy for ${targetUrl}...`);
+                const proxyUrl = proxy.url(targetUrl);
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error(`${proxy.name} returned ${response.status}`);
+                const data = await (proxy.name === 'allorigins' ? response.json() : response.text());
+                const html = proxy.extract(data);
+                if (html && html.length > 100) {
+                  console.log(`${proxy.name} succeeded`);
+                  return html;
+                }
+              } catch (error) {
+                console.log(`${proxy.name} failed:`, error.message);
+              }
+            }
+            return null;
+          };
+
+          // Helper: try to extract article content from HTML, returns null if insufficient
+          const tryExtractArticle = (html) => {
+            if (!html) return null;
+            const result = extractArticleContent(html);
+            return result.text.length >= 100 ? result : null;
+          };
+
+          // For web articles, try multiple fetch strategies
           showToast('Fetching article content...');
 
-          const corsProxies = [
-            {
-              name: 'allorigins',
-              url: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-              extract: (data) => data.contents
-            },
-            {
-              name: 'corsproxy.io',
-              url: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-              extract: (data) => data
-            },
-            {
-              name: 'codetabs',
-              url: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
-              extract: (data) => data
-            }
-          ];
-
-          let html = null;
-          let lastError = null;
-
-          for (const proxy of corsProxies) {
-            try {
-              console.log(`Trying ${proxy.name} proxy...`);
-              const proxyUrl = proxy.url(url);
-              const response = await fetch(proxyUrl);
-
-              if (!response.ok) {
-                throw new Error(`${proxy.name} returned ${response.status}`);
-              }
-
-              const data = await (proxy.name === 'allorigins' ? response.json() : response.text());
-              html = proxy.extract(data);
-
-              if (html && html.length > 100) {
-                console.log(`${proxy.name} succeeded`);
-                break;
-              }
-            } catch (error) {
-              console.log(`${proxy.name} failed:`, error.message);
-              lastError = error;
-            }
-          }
-
-          if (!html) {
-            throw lastError || new Error('All proxies failed');
-          }
+          let html = await fetchHtmlViaProxies(url);
 
           // Check if the response is actually a PDF (not detected by URL pattern)
-          if (html.substring(0, 10).includes('%PDF-')) {
+          if (html && html.substring(0, 10).includes('%PDF-')) {
             try {
               showToast('PDF detected, loading...');
               const pdfData = await fetchPdfBinary(url);
@@ -3134,15 +3134,64 @@
             }
           }
 
-          const { title, text } = extractArticleContent(html);
+          let extracted = tryExtractArticle(html);
 
-          if (text.length < 100) {
+          // Strategy 2: Try Wayback Machine (archive.org has CORS headers, no proxy needed)
+          if (!extracted) {
+            try {
+              console.log('Trying Wayback Machine...');
+              showToast('Trying archive.org...');
+              const archiveUrl = `https://web.archive.org/web/2/${url}`;
+              const archiveResponse = await fetch(archiveUrl);
+              if (archiveResponse.ok) {
+                const archiveHtml = await archiveResponse.text();
+                extracted = tryExtractArticle(archiveHtml);
+                if (extracted) console.log('Wayback Machine succeeded');
+              }
+            } catch (e) {
+              console.log('Wayback Machine failed:', e.message);
+            }
+          }
+
+          // Strategy 3: Try Google AMP version via proxies (simpler HTML, often bypasses paywalls)
+          if (!extracted) {
+            const cleanUrl = url.replace(/\/+$/, '');
+            const ampUrl = cleanUrl + '/amp/';
+            if (ampUrl !== url) {
+              try {
+                console.log('Trying AMP version...');
+                showToast('Trying AMP version...');
+                const ampHtml = await fetchHtmlViaProxies(ampUrl);
+                extracted = tryExtractArticle(ampHtml);
+                if (extracted) console.log('AMP version succeeded');
+              } catch (e) {
+                console.log('AMP version failed:', e.message);
+              }
+            }
+          }
+
+          // Strategy 4: Try Google Webcache via proxies
+          if (!extracted) {
+            try {
+              console.log('Trying Google Webcache...');
+              showToast('Trying Google cache...');
+              const cacheUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}&strip=1`;
+              const cacheHtml = await fetchHtmlViaProxies(cacheUrl);
+              extracted = tryExtractArticle(cacheHtml);
+              if (extracted) console.log('Google Webcache succeeded');
+            } catch (e) {
+              console.log('Google Webcache failed:', e.message);
+            }
+          }
+
+          if (!extracted) {
             showToast('Could not extract enough content. Try pasting manually.');
             setShowManualInput(true);
             setLoading(false);
             return;
           }
 
+          const { title, text } = extracted;
           const sentences = splitIntoSentences(text);
           sentencesRef.current = sentences;
 
