@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.16</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4219,7 +4219,7 @@
           return 'audio';
         }
         // RSS feed URLs - match common patterns and podcast hosting domains
-        if (lowerUrl.includes('.xml') || lowerUrl.match(/\.rss(\?|$)/) || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
+        if (lowerUrl.includes('.xml') || lowerUrl.includes('/rss') || lowerUrl.includes('/feed') ||
             lowerUrl.match(/\b(feeds?|rss)\./i) || lowerUrl.includes('anchor.fm') ||
             lowerUrl.includes('podcastfeeds.') || lowerUrl.includes('megaphone.fm') ||
             lowerUrl.includes('omnycontent.com') || lowerUrl.includes('podbean.com') ||
@@ -4229,8 +4229,7 @@
             lowerUrl.includes('art19.com') || lowerUrl.includes('transistor.fm') ||
             lowerUrl.includes('captivate.fm') || lowerUrl.includes('redcircle.com') ||
             lowerUrl.includes('audioboom.com') || lowerUrl.includes('pcdn.co') ||
-            lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com') ||
-            lowerUrl.includes('api.substack.com')) {
+            lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com')) {
           return 'rss';
         }
         return null;
@@ -4244,58 +4243,24 @@
           if (!response.ok) throw new Error('Failed to fetch Spotify metadata');
           const data = await response.json();
 
-          // Extract show name and episode title using common separators
+          // Extract show name from title using common separators
           // oEmbed title may be "Show Name - Episode Title", "Episode Title", or other formats
           let showName = data.title;
-          let episodeTitle = data.title;
-          let showNameConfirmed = false;
           if (data.provider_name === 'Spotify') {
-            const separators = [' - ', ' — ', ' – ', ' | ', ' · '];
+            const separators = [' - ', ' — ', ' – ', ' | '];
             for (const sep of separators) {
               if (data.title.includes(sep)) {
-                const parts = data.title.split(sep);
-                showName = parts[0].trim();
-                episodeTitle = parts.slice(1).join(sep).trim();
-                showNameConfirmed = true;
+                showName = data.title.split(sep)[0].trim();
                 break;
               }
             }
           } else {
             showName = data.provider_name;
-            showNameConfirmed = true;
-          }
-
-          // If we couldn't extract the show name from the title, try the show URL
-          // Spotify episode URLs often contain context=spotify:show:<showId>
-          if (!showNameConfirmed) {
-            try {
-              const urlObj = new URL(spotifyUrl);
-              const context = urlObj.searchParams.get('context');
-              if (context) {
-                const showMatch = context.match(/spotify:show:([a-zA-Z0-9]+)/);
-                if (showMatch) {
-                  const showUrl = `https://open.spotify.com/show/${showMatch[1]}`;
-                  const showOembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(showUrl)}`;
-                  const showResponse = await fetch(showOembedUrl);
-                  if (showResponse.ok) {
-                    const showData = await showResponse.json();
-                    if (showData.title) {
-                      showName = showData.title;
-                      showNameConfirmed = true;
-                    }
-                  }
-                }
-              }
-            } catch (e) {
-              console.log('Could not extract show name from context:', e);
-            }
           }
 
           return {
             title: data.title,
-            episodeTitle: episodeTitle,
             showName: showName,
-            showNameConfirmed: showNameConfirmed,
             thumbnailUrl: data.thumbnail_url
           };
         } catch (error) {
@@ -4307,71 +4272,38 @@
       // Search for RSS feed using podcast name
       const searchForRSSFeed = async (showName, episodeTitle) => {
         const normalizeForMatch = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-        const cleanForSearch = (t) => t.replace(/\p{Extended_Pictographic}/gu, '').replace(/\s+/g, ' ').trim();
 
         try {
-          // Strategy 1: Search by show name first to find the correct podcast
-          const searchQuery = encodeURIComponent(cleanForSearch(showName));
-          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.results && data.results.length > 0) {
-              // Score results by show name similarity — require a positive match
-              const showNorm = normalizeForMatch(showName);
-              let bestResult = null;
-              let bestScore = 0;
-              for (const result of data.results) {
-                if (!result.feedUrl) continue;
-                const resultNorm = normalizeForMatch(result.collectionName || '');
-                let score = 0;
-                if (resultNorm === showNorm) score = 100;
-                else if (resultNorm.includes(showNorm) || showNorm.includes(resultNorm)) score = 80;
-                else {
-                  const showWords = showNorm.split(/\s+/).filter(w => w.length > 2);
-                  showWords.forEach(word => { if (resultNorm.includes(word)) score += 10; });
-                }
-                if (score > bestScore) {
-                  bestScore = score;
-                  bestResult = result;
-                }
-              }
-              if (bestResult && bestScore > 0) {
-                return {
-                  feedUrl: bestResult.feedUrl,
-                  podcastName: bestResult.collectionName,
-                  artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
-                };
-              }
-            }
-          }
-
-          // Strategy 2: Search by episode title as fallback, but verify show name matches
+          // Strategy 1: Search iTunes for the episode directly (most reliable)
           if (episodeTitle) {
             try {
-              const episodeQuery = encodeURIComponent(cleanForSearch(episodeTitle));
+              const episodeQuery = encodeURIComponent(episodeTitle);
               const episodeResponse = await fetch(`https://itunes.apple.com/search?term=${episodeQuery}&entity=podcastEpisode&limit=10`);
               if (episodeResponse.ok) {
                 const episodeData = await episodeResponse.json();
                 if (episodeData.results && episodeData.results.length > 0) {
-                  const showNorm = normalizeForMatch(showName);
-                  // Score results by show name similarity — require a positive match
+                  const targetNorm = normalizeForMatch(episodeTitle);
                   let bestResult = null;
-                  let bestScore = 0;
+                  let bestScore = -1;
+
                   for (const result of episodeData.results) {
                     if (!result.feedUrl) continue;
-                    const resultShowNorm = normalizeForMatch(result.collectionName || '');
+                    const resultNorm = normalizeForMatch(result.trackName || '');
                     let score = 0;
-                    if (resultShowNorm === showNorm) score = 100;
-                    else if (resultShowNorm.includes(showNorm) || showNorm.includes(resultShowNorm)) score = 80;
+                    if (resultNorm === targetNorm) score = 100;
+                    else if (resultNorm.includes(targetNorm) || targetNorm.includes(resultNorm)) score = 80;
                     else {
-                      const showWords = showNorm.split(/\s+/).filter(w => w.length > 2);
-                      showWords.forEach(word => { if (resultShowNorm.includes(word)) score += 10; });
+                      const targetWords = targetNorm.split(/\s+/).filter(w => w.length > 3);
+                      targetWords.forEach(word => {
+                        if (resultNorm.includes(word)) score += 10;
+                      });
                     }
                     if (score > bestScore) {
                       bestScore = score;
                       bestResult = result;
                     }
                   }
+
                   if (bestResult && bestScore > 0) {
                     return {
                       feedUrl: bestResult.feedUrl,
@@ -4382,10 +4314,23 @@
                 }
               }
             } catch (e) {
-              console.log('Episode-level iTunes search failed:', e);
+              console.log('Episode-level iTunes search failed, trying show search:', e);
             }
           }
 
+          // Strategy 2: Search by show name (original approach, fallback)
+          const searchQuery = encodeURIComponent(showName);
+          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
+          if (!response.ok) throw new Error('iTunes search failed');
+          const data = await response.json();
+
+          if (data.results && data.results.length > 0) {
+            return {
+              feedUrl: data.results[0].feedUrl,
+              podcastName: data.results[0].collectionName,
+              artworkUrl: data.results[0].artworkUrl600 || data.results[0].artworkUrl100
+            };
+          }
           return null;
         } catch (error) {
           console.error('RSS search error:', error);
@@ -4447,25 +4392,15 @@
         let xmlText = null;
         for (const strategy of fetchStrategies) {
           try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000);
-            try {
-              const response = await fetch(strategy(feedUrl), { signal: controller.signal });
-              if (response.ok) {
-                const text = await response.text();
-                clearTimeout(timeoutId);
-                // Validate response is actually XML/RSS, not an HTML error page
-                if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
-                  xmlText = text;
-                  break;
-                }
-                console.log('CORS proxy returned non-XML response, trying next...');
-              } else {
-                clearTimeout(timeoutId);
+            const response = await fetch(strategy(feedUrl));
+            if (response.ok) {
+              const text = await response.text();
+              // Validate response is actually XML/RSS, not an HTML error page
+              if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
+                xmlText = text;
+                break;
               }
-            } catch (e) {
-              clearTimeout(timeoutId);
-              throw e;
+              console.log('CORS proxy returned non-XML response, trying next...');
             }
           } catch (e) {
             continue;
@@ -4474,7 +4409,7 @@
 
         if (!xmlText) {
           console.error('All fetch strategies failed for RSS feed:', feedUrl);
-          return { error: 'fetch_failed' };
+          return null;
         }
 
         try {
@@ -4488,38 +4423,20 @@
             return null;
           }
 
-          // Support both RSS (<item>) and Atom (<entry>) feeds
-          let items = xml.querySelectorAll('item');
-          if (items.length === 0) {
-            items = xml.querySelectorAll('entry');
-          }
+          const items = xml.querySelectorAll('item');
 
-          // Extract channel info (RSS uses <channel>, Atom uses <feed> root)
+          // Extract channel info
           const channel = xml.querySelector('channel');
-          const feed = xml.querySelector('feed');
-          const channelTitle = channel?.querySelector(':scope > title')?.textContent ||
-                               feed?.querySelector(':scope > title')?.textContent || '';
-          const itunesImage = (channel || feed)?.getElementsByTagName('itunes:image')[0];
+          const channelTitle = channel?.querySelector(':scope > title')?.textContent || '';
+          const itunesImage = channel?.getElementsByTagName('itunes:image')[0];
           const channelArtwork = itunesImage?.getAttribute('href') ||
-                                 channel?.querySelector('image url')?.textContent ||
-                                 feed?.querySelector('logo')?.textContent || '';
+                                 channel?.querySelector('image url')?.textContent || '';
 
-          // Helper to extract audio URL from an item/entry (check enclosure, link[rel=enclosure], and media:content)
+          // Helper to extract audio URL from an item (check enclosure and media:content)
           const getAudioUrl = (item) => {
             const enclosure = item.querySelector('enclosure');
             const enclosureUrl = enclosure?.getAttribute('url');
             if (enclosureUrl) return enclosureUrl;
-
-            // Check <link rel="enclosure"> (common in Atom feeds)
-            const links = item.querySelectorAll('link');
-            for (const link of links) {
-              const rel = link.getAttribute('rel') || '';
-              const href = link.getAttribute('href') || '';
-              const type = link.getAttribute('type') || '';
-              if (rel === 'enclosure' && href && (type.startsWith('audio/') || href.match(/\.(mp3|m4a|ogg|aac|wav)(\?|$)/i))) {
-                return href;
-              }
-            }
 
             // Fallback: check media:content elements for audio
             const mediaContents = item.getElementsByTagName('media:content');
@@ -4530,43 +4447,8 @@
                 return mcUrl;
               }
             }
-
-            // Last resort: scan content:encoded or description HTML for audio URLs
-            // (some platforms like Substack embed audio in post HTML instead of enclosures)
-            const contentEncoded = item.getElementsByTagName('content:encoded')[0]?.textContent || '';
-            const descriptionHtml = item.querySelector('description')?.textContent || '';
-            const htmlContent = contentEncoded || descriptionHtml;
-            if (htmlContent) {
-              // Match <audio> src, <source> src, or direct audio file links
-              const audioSrcMatch = htmlContent.match(/(?:src|href)=["']([^"']*?\.(?:mp3|m4a|ogg|aac|wav)(?:\?[^"']*)?)['"]/i);
-              if (audioSrcMatch) return audioSrcMatch[1];
-            }
             return null;
           };
-
-          // Helpers for RSS/Atom field differences
-          const getItemDate = (item) =>
-            item.querySelector('pubDate')?.textContent ||
-            item.querySelector('published')?.textContent ||
-            item.querySelector('updated')?.textContent || '';
-          const getItemLink = (item) => {
-            // RSS: <link>text</link>, Atom: <link href="..." /> (skip enclosure links)
-            const textLink = item.querySelector('link')?.textContent;
-            if (textLink) return textLink;
-            const links = item.querySelectorAll('link');
-            for (const l of links) {
-              const rel = l.getAttribute('rel') || 'alternate';
-              if (rel === 'alternate' || rel === '') {
-                const href = l.getAttribute('href');
-                if (href) return href;
-              }
-            }
-            return '';
-          };
-          const getItemDescription = (item) =>
-            item.querySelector('description')?.textContent ||
-            item.querySelector('summary')?.textContent ||
-            item.querySelector('content')?.textContent || '';
 
           // Try to find matching episode by title
           let bestMatch = null;
@@ -4602,14 +4484,16 @@
               if (score > bestScore || (score === bestScore && !bestMatch)) {
                 bestScore = score;
 
+                const description = item.querySelector('description')?.textContent || '';
+
                 bestMatch = {
                   title: title,
                   audioUrl: audioUrl,
-                  description: getItemDescription(item),
+                  description: description,
                   artworkUrl: channelArtwork,
                   channelTitle: channelTitle,
-                  pubDate: getItemDate(item),
-                  link: getItemLink(item)
+                  pubDate: item.querySelector('pubDate')?.textContent || '',
+                  link: item.querySelector('link')?.textContent || ''
                 };
               }
             }
@@ -4620,14 +4504,15 @@
             for (const item of items) {
               const audioUrl = getAudioUrl(item);
               if (audioUrl) {
+                const description = item.querySelector('description')?.textContent || '';
                 bestMatch = {
                   title: item.querySelector('title')?.textContent || 'Unknown Episode',
                   audioUrl: audioUrl,
-                  description: getItemDescription(item),
+                  description: description,
                   artworkUrl: channelArtwork,
                   channelTitle: channelTitle,
-                  pubDate: getItemDate(item),
-                  link: getItemLink(item)
+                  pubDate: item.querySelector('pubDate')?.textContent || '',
+                  link: item.querySelector('link')?.textContent || ''
                 };
                 break;
               }
@@ -4667,29 +4552,25 @@
             return;
           }
 
-          console.log('Spotify metadata:', { title: metadata.title, showName: metadata.showName, episodeTitle: metadata.episodeTitle, showNameConfirmed: metadata.showNameConfirmed });
-          showToast(`Show: "${metadata.showName}" — Episode: "${metadata.episodeTitle}"`);
+          showToast(`Found: ${metadata.title}`);
 
           // Step 2: Search for RSS feed
-          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.episodeTitle);
+          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
           if (!rssInfo) {
             showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
             return;
           }
 
-          showToast(`Found feed: ${rssInfo.podcastName} — fetching episodes...`);
+          showToast(`Found feed: ${rssInfo.podcastName}`);
 
           // Step 3: Parse RSS and find episode
-          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.episodeTitle);
-          if (!episode || episode.error) {
+          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
+          if (!episode) {
+            // Show feed URL so user can try loading it directly as RSS
             console.log('Failed feed URL:', rssInfo.feedUrl);
             setUrl(rssInfo.feedUrl);
-            if (episode?.error === 'fetch_failed') {
-              showToast('Could not fetch RSS feed — feed URL pasted, try loading it directly');
-            } else {
-              showToast('Episode not found in RSS feed — feed URL pasted, try loading it directly');
-            }
+            showToast('Could not find episode — feed URL pasted, try loading it directly');
             setIsLoadingPodcast(false);
             return;
           }
@@ -4739,10 +4620,8 @@
 
         try {
           const episode = await parseRSSAndFindEpisode(feedUrl, '');
-          if (!episode || episode.error) {
-            showToast(episode?.error === 'fetch_failed'
-              ? 'Could not fetch RSS feed — it may require a podcast app or be temporarily unavailable'
-              : 'Could not find episodes in RSS feed');
+          if (!episode) {
+            showToast('Could not find episodes in RSS feed');
             setIsLoadingPodcast(false);
             return;
           }
