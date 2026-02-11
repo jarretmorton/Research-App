@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.14</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.15</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4451,20 +4451,38 @@
             return null;
           }
 
-          const items = xml.querySelectorAll('item');
+          // Support both RSS (<item>) and Atom (<entry>) feeds
+          let items = xml.querySelectorAll('item');
+          if (items.length === 0) {
+            items = xml.querySelectorAll('entry');
+          }
 
-          // Extract channel info
+          // Extract channel info (RSS uses <channel>, Atom uses <feed> root)
           const channel = xml.querySelector('channel');
-          const channelTitle = channel?.querySelector(':scope > title')?.textContent || '';
-          const itunesImage = channel?.getElementsByTagName('itunes:image')[0];
+          const feed = xml.querySelector('feed');
+          const channelTitle = channel?.querySelector(':scope > title')?.textContent ||
+                               feed?.querySelector(':scope > title')?.textContent || '';
+          const itunesImage = (channel || feed)?.getElementsByTagName('itunes:image')[0];
           const channelArtwork = itunesImage?.getAttribute('href') ||
-                                 channel?.querySelector('image url')?.textContent || '';
+                                 channel?.querySelector('image url')?.textContent ||
+                                 feed?.querySelector('logo')?.textContent || '';
 
-          // Helper to extract audio URL from an item (check enclosure and media:content)
+          // Helper to extract audio URL from an item/entry (check enclosure, link[rel=enclosure], and media:content)
           const getAudioUrl = (item) => {
             const enclosure = item.querySelector('enclosure');
             const enclosureUrl = enclosure?.getAttribute('url');
             if (enclosureUrl) return enclosureUrl;
+
+            // Check <link rel="enclosure"> (common in Atom feeds)
+            const links = item.querySelectorAll('link');
+            for (const link of links) {
+              const rel = link.getAttribute('rel') || '';
+              const href = link.getAttribute('href') || '';
+              const type = link.getAttribute('type') || '';
+              if (rel === 'enclosure' && href && (type.startsWith('audio/') || href.match(/\.(mp3|m4a|ogg|aac|wav)(\?|$)/i))) {
+                return href;
+              }
+            }
 
             // Fallback: check media:content elements for audio
             const mediaContents = item.getElementsByTagName('media:content');
@@ -4477,6 +4495,30 @@
             }
             return null;
           };
+
+          // Helpers for RSS/Atom field differences
+          const getItemDate = (item) =>
+            item.querySelector('pubDate')?.textContent ||
+            item.querySelector('published')?.textContent ||
+            item.querySelector('updated')?.textContent || '';
+          const getItemLink = (item) => {
+            // RSS: <link>text</link>, Atom: <link href="..." /> (skip enclosure links)
+            const textLink = item.querySelector('link')?.textContent;
+            if (textLink) return textLink;
+            const links = item.querySelectorAll('link');
+            for (const l of links) {
+              const rel = l.getAttribute('rel') || 'alternate';
+              if (rel === 'alternate' || rel === '') {
+                const href = l.getAttribute('href');
+                if (href) return href;
+              }
+            }
+            return '';
+          };
+          const getItemDescription = (item) =>
+            item.querySelector('description')?.textContent ||
+            item.querySelector('summary')?.textContent ||
+            item.querySelector('content')?.textContent || '';
 
           // Try to find matching episode by title
           let bestMatch = null;
@@ -4512,16 +4554,14 @@
               if (score > bestScore || (score === bestScore && !bestMatch)) {
                 bestScore = score;
 
-                const description = item.querySelector('description')?.textContent || '';
-
                 bestMatch = {
                   title: title,
                   audioUrl: audioUrl,
-                  description: description,
+                  description: getItemDescription(item),
                   artworkUrl: channelArtwork,
                   channelTitle: channelTitle,
-                  pubDate: item.querySelector('pubDate')?.textContent || '',
-                  link: item.querySelector('link')?.textContent || ''
+                  pubDate: getItemDate(item),
+                  link: getItemLink(item)
                 };
               }
             }
@@ -4532,15 +4572,14 @@
             for (const item of items) {
               const audioUrl = getAudioUrl(item);
               if (audioUrl) {
-                const description = item.querySelector('description')?.textContent || '';
                 bestMatch = {
                   title: item.querySelector('title')?.textContent || 'Unknown Episode',
                   audioUrl: audioUrl,
-                  description: description,
+                  description: getItemDescription(item),
                   artworkUrl: channelArtwork,
                   channelTitle: channelTitle,
-                  pubDate: item.querySelector('pubDate')?.textContent || '',
-                  link: item.querySelector('link')?.textContent || ''
+                  pubDate: getItemDate(item),
+                  link: getItemLink(item)
                 };
                 break;
               }
