@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.8</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.9</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4243,14 +4243,17 @@
           if (!response.ok) throw new Error('Failed to fetch Spotify metadata');
           const data = await response.json();
 
-          // Extract show name from title using common separators
+          // Extract show name and episode title using common separators
           // oEmbed title may be "Show Name - Episode Title", "Episode Title", or other formats
           let showName = data.title;
+          let episodeTitle = data.title;
           if (data.provider_name === 'Spotify') {
             const separators = [' - ', ' — ', ' – ', ' | '];
             for (const sep of separators) {
               if (data.title.includes(sep)) {
-                showName = data.title.split(sep)[0].trim();
+                const parts = data.title.split(sep);
+                showName = parts[0].trim();
+                episodeTitle = parts.slice(1).join(sep).trim();
                 break;
               }
             }
@@ -4260,6 +4263,7 @@
 
           return {
             title: data.title,
+            episodeTitle: episodeTitle,
             showName: showName,
             thumbnailUrl: data.thumbnail_url
           };
@@ -4555,7 +4559,7 @@
           showToast(`Found: ${metadata.title}`);
 
           // Step 2: Search for RSS feed
-          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
+          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.episodeTitle);
           if (!rssInfo) {
             showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
@@ -4565,7 +4569,7 @@
           showToast(`Found feed: ${rssInfo.podcastName}`);
 
           // Step 3: Parse RSS and find episode
-          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
+          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.episodeTitle);
           if (!episode) {
             // Show feed URL so user can try loading it directly as RSS
             console.log('Failed feed URL:', rssInfo.feedUrl);
