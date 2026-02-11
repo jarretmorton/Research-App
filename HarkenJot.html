@@ -2280,7 +2280,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2842,35 +2842,73 @@
           contentElement = doc.body;
         }
 
-        // Extract text from paragraphs for cleaner content
-        const paragraphs = contentElement.querySelectorAll('p');
-        let text = '';
+        // Helper: clean and collapse whitespace in extracted text
+        const cleanText = (t) => t.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\t+/g, ' ').trim();
 
-        if (paragraphs.length > 3) {
-          // If we have paragraphs, use them for cleaner extraction
-          paragraphs.forEach(p => {
+        // Helper: extract paragraph text from an element
+        const extractParagraphs = (el) => {
+          const paras = el.querySelectorAll('p');
+          let result = '';
+          paras.forEach(p => {
             const pText = p.textContent.trim();
-            if (pText.length > 20) { // Filter out short paragraphs (likely UI elements)
-              text += pText + ' ';
-            }
+            if (pText.length > 10) result += pText + ' ';
           });
-        } else {
-          // Fall back to all text content
-          text = contentElement.textContent;
+          return result;
+        };
+
+        // Strategy A: paragraph extraction from content element
+        let text = cleanText(extractParagraphs(contentElement));
+
+        // Strategy B: full textContent from content element
+        if (text.length < 200 && contentElement !== doc.body) {
+          console.log('Paragraph extraction insufficient, trying full content element text');
+          text = cleanText(contentElement.textContent);
         }
 
-        // Clean up the text
-        text = text
-          .replace(/\s+/g, ' ')           // Collapse whitespace
-          .replace(/\n+/g, ' ')           // Remove newlines
-          .replace(/\t+/g, ' ')           // Remove tabs
-          .trim();
+        // Strategy C: text density analysis — find the block most likely to be article body
+        if (text.length < 200) {
+          console.log('Content element insufficient, trying text density analysis');
+          const candidates = doc.querySelectorAll('div, section, article, main');
+          let bestElement = null;
+          let bestScore = 0;
 
-        // If DOM extraction yielded insufficient content, use structured data
+          candidates.forEach(el => {
+            const elText = el.textContent.trim();
+            if (elText.length < 200) return;
+            const htmlLen = el.innerHTML.length;
+            const textDensity = elText.length / Math.max(htmlLen, 1);
+            const pCount = el.querySelectorAll('p').length;
+            const pBonus = Math.min(pCount / 5, 2);
+            const score = textDensity * elText.length * (1 + pBonus);
+            if (score > bestScore) {
+              bestScore = score;
+              bestElement = el;
+            }
+          });
+
+          if (bestElement) {
+            // Try paragraphs first, then textContent
+            let densityText = cleanText(extractParagraphs(bestElement));
+            if (densityText.length < 200) densityText = cleanText(bestElement.textContent);
+            if (densityText.length > text.length) {
+              text = densityText;
+              console.log('Text density analysis found better content:', text.length, 'chars');
+            }
+          }
+        }
+
+        // Strategy D: last resort — full body text
+        if (text.length < 200) {
+          console.log('All DOM strategies insufficient, falling back to body text');
+          const bodyText = cleanText(doc.body.textContent);
+          if (bodyText.length > text.length) text = bodyText;
+        }
+
+        // Strategy E: structured data override (JSON-LD / __NEXT_DATA__)
         let usedStructuredData = false;
         if (text.length < 200 && structuredText) {
           console.log('DOM extraction insufficient, using structured data (JSON-LD / __NEXT_DATA__)');
-          text = structuredText.replace(/\s+/g, ' ').replace(/\n+/g, ' ').replace(/\t+/g, ' ').trim();
+          text = cleanText(structuredText);
           usedStructuredData = true;
         }
 
