@@ -2259,7 +2259,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.15</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.8.16</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4248,24 +4248,54 @@
           // oEmbed title may be "Show Name - Episode Title", "Episode Title", or other formats
           let showName = data.title;
           let episodeTitle = data.title;
+          let showNameConfirmed = false;
           if (data.provider_name === 'Spotify') {
-            const separators = [' - ', ' — ', ' – ', ' | '];
+            const separators = [' - ', ' — ', ' – ', ' | ', ' · '];
             for (const sep of separators) {
               if (data.title.includes(sep)) {
                 const parts = data.title.split(sep);
                 showName = parts[0].trim();
                 episodeTitle = parts.slice(1).join(sep).trim();
+                showNameConfirmed = true;
                 break;
               }
             }
           } else {
             showName = data.provider_name;
+            showNameConfirmed = true;
+          }
+
+          // If we couldn't extract the show name from the title, try the show URL
+          // Spotify episode URLs often contain context=spotify:show:<showId>
+          if (!showNameConfirmed) {
+            try {
+              const urlObj = new URL(spotifyUrl);
+              const context = urlObj.searchParams.get('context');
+              if (context) {
+                const showMatch = context.match(/spotify:show:([a-zA-Z0-9]+)/);
+                if (showMatch) {
+                  const showUrl = `https://open.spotify.com/show/${showMatch[1]}`;
+                  const showOembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(showUrl)}`;
+                  const showResponse = await fetch(showOembedUrl);
+                  if (showResponse.ok) {
+                    const showData = await showResponse.json();
+                    if (showData.title) {
+                      showName = showData.title;
+                      showNameConfirmed = true;
+                    }
+                  }
+                }
+              }
+            } catch (e) {
+              console.log('Could not extract show name from context:', e);
+            }
           }
 
           return {
             title: data.title,
             episodeTitle: episodeTitle,
             showName: showName,
+            showNameConfirmed: showNameConfirmed,
             thumbnailUrl: data.thumbnail_url
           };
         } catch (error) {
@@ -4286,9 +4316,9 @@
           if (response.ok) {
             const data = await response.json();
             if (data.results && data.results.length > 0) {
-              // Score results by show name similarity
+              // Score results by show name similarity — require a positive match
               const showNorm = normalizeForMatch(showName);
-              let bestResult = data.results[0]; // default to first
+              let bestResult = null;
               let bestScore = 0;
               for (const result of data.results) {
                 if (!result.feedUrl) continue;
@@ -4305,11 +4335,13 @@
                   bestResult = result;
                 }
               }
-              return {
-                feedUrl: bestResult.feedUrl,
-                podcastName: bestResult.collectionName,
-                artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
-              };
+              if (bestResult && bestScore > 0) {
+                return {
+                  feedUrl: bestResult.feedUrl,
+                  podcastName: bestResult.collectionName,
+                  artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
+                };
+              }
             }
           }
 
@@ -4322,25 +4354,29 @@
                 const episodeData = await episodeResponse.json();
                 if (episodeData.results && episodeData.results.length > 0) {
                   const showNorm = normalizeForMatch(showName);
-                  // Prefer results whose show name matches
+                  // Score results by show name similarity — require a positive match
+                  let bestResult = null;
+                  let bestScore = 0;
                   for (const result of episodeData.results) {
                     if (!result.feedUrl) continue;
                     const resultShowNorm = normalizeForMatch(result.collectionName || '');
-                    if (resultShowNorm.includes(showNorm) || showNorm.includes(resultShowNorm)) {
-                      return {
-                        feedUrl: result.feedUrl,
-                        podcastName: result.collectionName,
-                        artworkUrl: result.artworkUrl600 || result.artworkUrl100
-                      };
+                    let score = 0;
+                    if (resultShowNorm === showNorm) score = 100;
+                    else if (resultShowNorm.includes(showNorm) || showNorm.includes(resultShowNorm)) score = 80;
+                    else {
+                      const showWords = showNorm.split(/\s+/).filter(w => w.length > 2);
+                      showWords.forEach(word => { if (resultShowNorm.includes(word)) score += 10; });
+                    }
+                    if (score > bestScore) {
+                      bestScore = score;
+                      bestResult = result;
                     }
                   }
-                  // No show name match — take first result with feedUrl as last resort
-                  const fallback = episodeData.results.find(r => r.feedUrl);
-                  if (fallback) {
+                  if (bestResult && bestScore > 0) {
                     return {
-                      feedUrl: fallback.feedUrl,
-                      podcastName: fallback.collectionName,
-                      artworkUrl: fallback.artworkUrl600 || fallback.artworkUrl100
+                      feedUrl: bestResult.feedUrl,
+                      podcastName: bestResult.collectionName,
+                      artworkUrl: bestResult.artworkUrl600 || bestResult.artworkUrl100
                     };
                   }
                 }
@@ -4631,7 +4667,7 @@
             return;
           }
 
-          console.log('Spotify metadata:', { title: metadata.title, showName: metadata.showName, episodeTitle: metadata.episodeTitle });
+          console.log('Spotify metadata:', { title: metadata.title, showName: metadata.showName, episodeTitle: metadata.episodeTitle, showNameConfirmed: metadata.showNameConfirmed });
           showToast(`Show: "${metadata.showName}" — Episode: "${metadata.episodeTitle}"`);
 
           // Step 2: Search for RSS feed
