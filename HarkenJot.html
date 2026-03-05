@@ -1858,6 +1858,18 @@
       return pdfPatterns.some(p => p.test(lower));
     };
 
+    // Detect ForumMagnum sites (LessWrong, Alignment Forum, EA Forum) which expose a public GraphQL API
+    const isForumMagnumUrl = (url) => {
+      try {
+        const h = safeHostname(url);
+        return (
+          h === 'www.lesswrong.com' || h === 'lesswrong.com' ||
+          h === 'www.alignmentforum.org' || h === 'alignmentforum.org' ||
+          h === 'forum.effectivealtruism.org'
+        );
+      } catch { return false; }
+    };
+
     // Toast Component
     function Toast({ message, show, onUndo, showUndo }) {
       return (
@@ -2280,7 +2292,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3147,6 +3159,52 @@
             const result = extractArticleContent(html);
             return result.text.length >= 100 ? result : null;
           };
+
+          // Strategy 0: ForumMagnum GraphQL API (LessWrong, Alignment Forum, EA Forum)
+          // These sites block CORS proxy requests with 403, but expose a public GraphQL API
+          // that returns clean post HTML via their /graphql endpoint.
+          if (isForumMagnumUrl(url)) {
+            try {
+              showToast('Fetching via LessWrong API...');
+              const urlObj = new URL(url.startsWith('http') ? url : 'https://' + url);
+              const pathParts = urlObj.pathname.split('/').filter(Boolean);
+              // URL format: /posts/{documentId}/{slug}
+              const postsIdx = pathParts.indexOf('posts');
+              const documentId = postsIdx >= 0 ? pathParts[postsIdx + 1] : null;
+
+              if (documentId) {
+                const gqlQuery = `{post(input:{selector:{documentId:"${documentId}"}}){result{title,htmlBody}}}`;
+                const gqlUrl = `${urlObj.origin}/graphql?query=${encodeURIComponent(gqlQuery)}`;
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gqlUrl)}`;
+
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                  const proxyData = await response.json();
+                  const gqlData = JSON.parse(proxyData.contents);
+                  const result = gqlData?.data?.post?.result;
+
+                  if (result?.htmlBody && result.htmlBody.length > 100) {
+                    const extracted = tryExtractArticle(result.htmlBody);
+                    if (extracted) {
+                      const title = result.title || extracted.title;
+                      const { text } = extracted;
+                      const sentences = splitIntoSentences(text);
+                      sentencesRef.current = sentences;
+                      const newSource = addSource({ type: 'article', title, url, content: text, sentences });
+                      setContent({ title: newSource.title, sentences, url });
+                      setUrl('');
+                      showToast('Article loaded successfully!');
+                      setLoading(false);
+                      return;
+                    }
+                  }
+                }
+              }
+              console.log('ForumMagnum GraphQL failed, falling back to standard strategies');
+            } catch (e) {
+              console.log('ForumMagnum GraphQL error:', e.message);
+            }
+          }
 
           // For web articles, try multiple fetch strategies
           showToast('Fetching article content...');
