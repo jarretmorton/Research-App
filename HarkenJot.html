@@ -2106,11 +2106,20 @@
 
       // Save to localStorage
       useEffect(() => {
-        localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
+        try {
+          localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
+        } catch (e) {
+          console.error('Failed to save sources to localStorage:', e);
+          if (e.name === 'QuotaExceededError') showToast('Storage full — some data may not be saved.');
+        }
       }, [sources]);
 
       useEffect(() => {
-        localStorage.setItem('harkenjot_notes', JSON.stringify(notes));
+        try {
+          localStorage.setItem('harkenjot_notes', JSON.stringify(notes));
+        } catch (e) {
+          console.error('Failed to save notes to localStorage:', e);
+        }
       }, [notes]);
 
       // Close sidebar when changing tabs
@@ -2292,7 +2301,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2710,9 +2719,13 @@
       // Save position whenever it changes
       useEffect(() => {
         if (currentSource?.id && content) {
-          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
-          savedPositions[currentSource.id] = currentSentenceIndex;
-          localStorage.setItem('harkenjot_positions', JSON.stringify(savedPositions));
+          try {
+            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
+            savedPositions[currentSource.id] = currentSentenceIndex;
+            localStorage.setItem('harkenjot_positions', JSON.stringify(savedPositions));
+          } catch (e) {
+            console.error('Failed to save position to localStorage:', e);
+          }
         }
       }, [currentSentenceIndex, currentSource?.id, content]);
 
@@ -4032,7 +4045,7 @@
         setShowTextNote(true);
       };
 
-      const progress = content ? (currentSentenceIndex / content.sentences.length) * 100 : 0;
+      const progress = content ? (currentSentenceIndex / (content.sentences?.length || 1)) * 100 : 0;
       const notedSentences = new Set(notes.map(n => n.position));
 
       return (
@@ -4102,7 +4115,7 @@
                   <div className="source-meta">
                     <span className={`library-item-type ${currentSource?.type || 'article'}`}>{currentSource?.type || 'Article'}</span>
                     {content.url && <span>{safeHostname(content.url)}</span>}
-                    <span>{content.sentences.length} sentences</span>
+                    <span>{content.sentences?.length ?? 0} sentences</span>
                     {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                   </div>
                 </div>
@@ -4110,7 +4123,7 @@
               
               <div className="reader-body" ref={readerContainerRef} style={{ display: carMode ? 'none' : 'block' }}>
                 <div className="reader-content">
-                  {content.sentences.map((sentence, index) => (
+                  {(content.sentences || []).map((sentence, index) => (
                     <span
                       key={index}
                       ref={(el) => sentenceRefs.current[index] = el}
@@ -4196,7 +4209,7 @@
                     <button
                       className={`skip-btn ${carMode ? 'car-mode' : ''}`}
                       onClick={skipForward}
-                      disabled={currentSentenceIndex === content.sentences.length - 1}
+                      disabled={currentSentenceIndex === (content.sentences?.length ?? 1) - 1}
                       title="Next sentence"
                     >
                       <Icons.SkipForward />
@@ -4209,7 +4222,7 @@
                         <div className="progress-fill" style={{ width: `${progress}%` }} />
                       </div>
                       <div className="progress-text">
-                        <span>Sentence {currentSentenceIndex + 1} of {content.sentences.length}</span>
+                        <span>Sentence {currentSentenceIndex + 1} of {content.sentences?.length ?? 0}</span>
                         <span>{Math.round(progress)}%</span>
                       </div>
                     </div>
@@ -4444,9 +4457,13 @@
       // Save position whenever it changes (for both YouTube and podcast)
       useEffect(() => {
         if (currentSource?.id && (videoId || podcastAudio) && currentTime > 0) {
-          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-          savedPositions[currentSource.id] = currentTime;
-          localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
+          try {
+            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+            savedPositions[currentSource.id] = currentTime;
+            localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
+          } catch (e) {
+            console.error('Failed to save media position to localStorage:', e);
+          }
         }
       }, [currentTime, currentSource?.id, videoId, podcastAudio]);
 
