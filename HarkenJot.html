@@ -1837,6 +1837,17 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // localStorage storage monitoring
+    const getStorageUsageBytes = () => {
+      let total = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        total += (key.length + localStorage.getItem(key).length) * 2; // UTF-16
+      }
+      return total;
+    };
+    const STORAGE_QUOTA_ESTIMATE = 5 * 1024 * 1024; // 5MB conservative estimate
+
     // Detect PDF URLs by extension or known academic/research URL patterns
     const isPdfUrl = (url) => {
       const lower = url.toLowerCase();
@@ -2071,6 +2082,28 @@
       });
     })();
 
+    // Strip redundant 'sentences' arrays from stored sources to reclaim ~40% localStorage space.
+    // Sentences are derived at runtime from 'content' via splitIntoSentences().
+    (function stripStoredSentences() {
+      try {
+        const raw = localStorage.getItem('harkenjot_sources');
+        if (!raw) return;
+        const sources = JSON.parse(raw);
+        let changed = false;
+        sources.forEach(s => {
+          if (s.sentences) {
+            delete s.sentences;
+            changed = true;
+          }
+        });
+        if (changed) {
+          localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
+        }
+      } catch (e) {
+        // Migration is best-effort; app will still work with sentences present
+      }
+    })();
+
     // Main App
     function App() {
       const [activeTab, setActiveTab] = useState('reader');
@@ -2092,6 +2125,7 @@
       const readerRef = useRef(null);
       const mediaRef = useRef(null);
       const undoTimeoutRef = useRef(null);
+      const storageWarningShownRef = useRef(false);
 
       // Detect if user is on a mobile device
       useEffect(() => {
@@ -2104,13 +2138,22 @@
         checkMobile();
       }, []);
 
-      // Save to localStorage
+      // Save to localStorage with storage monitoring
       useEffect(() => {
         try {
           localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
+          // Check storage usage after write
+          if (!storageWarningShownRef.current) {
+            const usage = getStorageUsageBytes();
+            if (usage > STORAGE_QUOTA_ESTIMATE * 0.8) {
+              storageWarningShownRef.current = true;
+              const usedMB = (usage / (1024 * 1024)).toFixed(1);
+              showToast(`Storage is ${usedMB}MB — approaching browser limit. Export your library and remove old sources to free space.`);
+            }
+          }
         } catch (e) {
           console.error('Failed to save sources to localStorage:', e);
-          if (e.name === 'QuotaExceededError') showToast('Storage full — some data may not be saved.');
+          if (e.name === 'QuotaExceededError') showToast('Storage full — changes may not persist. Export your library and delete old sources to free space.');
         }
       }, [sources]);
 
@@ -2119,6 +2162,7 @@
           localStorage.setItem('harkenjot_notes', JSON.stringify(notes));
         } catch (e) {
           console.error('Failed to save notes to localStorage:', e);
+          if (e.name === 'QuotaExceededError') showToast('Storage full — notes may not persist. Export your library and delete old sources to free space.');
         }
       }, [notes]);
 
@@ -2301,7 +2345,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3102,8 +3146,7 @@
             type: 'pdf',
             title: pdfTitle,
             url: pdfUrl,
-            content: fullText,
-            sentences: sentences
+            content: fullText
           });
 
           setContent({
@@ -3212,7 +3255,7 @@
                       const { text } = extracted;
                       const sentences = splitIntoSentences(text);
                       sentencesRef.current = sentences;
-                      const newSource = addSource({ type: 'article', title, url, content: text, sentences });
+                      const newSource = addSource({ type: 'article', title, url, content: text });
                       setContent({ title: newSource.title, sentences, url });
                       setUrl('');
                       showToast('Article loaded successfully!');
@@ -3317,8 +3360,7 @@
             type: 'article',
             title: title,
             url: url,
-            content: text,
-            sentences: sentences
+            content: text
           });
 
           setContent({
@@ -3349,8 +3391,7 @@
           type: 'article',
           title: url || 'Pasted Content',
           url: url || null,
-          content: manualContent,
-          sentences: sentences
+          content: manualContent
         });
         
         setContent({
@@ -4970,9 +5011,11 @@
 
           // Save start timestamp so position restore picks it up
           if (startTime && newSource) {
-            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-            savedPositions[newSource.id] = startTime;
-            localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
+            try {
+              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+              savedPositions[newSource.id] = startTime;
+              localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
+            } catch (e) { /* Position save is best-effort */ }
           }
 
           setUrl(''); // Clear URL after successful load
@@ -6135,10 +6178,13 @@
         const readerPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
         const mediaPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
 
+        // Strip sentences arrays from sources to reduce export size
+        const cleanSources = sources.map(({ sentences, ...rest }) => rest);
+
         const exportData = {
           version: 2,
           exportedAt: new Date().toISOString(),
-          sources: sources,
+          sources: cleanSources,
           notes: notes,
           positions: {
             reader: readerPositions,
@@ -6217,14 +6263,16 @@
                 setNotes(data.notes);
 
                 // Restore saved positions if available (version 2+)
-                if (data.positions) {
-                  if (data.positions.reader) {
-                    localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
+                try {
+                  if (data.positions) {
+                    if (data.positions.reader) {
+                      localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
+                    }
+                    if (data.positions.media) {
+                      localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
+                    }
                   }
-                  if (data.positions.media) {
-                    localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
-                  }
-                }
+                } catch (e) { /* Position restore is best-effort */ }
 
                 showToast(`Imported ${data.sources.length} sources and ${data.notes.length} notes`);
               }
@@ -6312,7 +6360,7 @@
                         {source.type === 'youtube' && source.channelName && <span>{source.channelName}</span>}
                         {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeHostname(source.url)}</span>}
                         {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
-                        {(source.type === 'article' || source.type === 'pdf') && source.sentences && <span>{source.sentences.length} sentences</span>}
+                        {(source.type === 'article' || source.type === 'pdf') && source.content && <span>{(source.content.match(/[^.!?]+[.!?]+/g) || [source.content]).length} sentences</span>}
                         {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
                       </div>
                     </div>
@@ -6400,11 +6448,14 @@
       const exportCurrentSource = () => {
         if (!currentSource) return;
 
+        // Strip sentences array from source to reduce export size
+        const { sentences: _, ...cleanSource } = currentSource;
+
         const exportData = {
           version: 2,
           exportType: 'single-source',
           exportedAt: new Date().toISOString(),
-          sources: [currentSource],
+          sources: [cleanSource],
           notes: notes
         };
 
