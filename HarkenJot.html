@@ -2345,7 +2345,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.9.7</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4391,19 +4391,7 @@
           // Initialize player after state update
           setTimeout(() => {
             if (window.YT && window.YT.Player) {
-              initPlayer(currentSource.videoId);
-              // Restore saved position after player is ready (without auto-playing)
-              setTimeout(() => {
-                if (playerRef.current) {
-                  const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-                  const savedPosition = savedPositions[currentSource.id];
-                  if (savedPosition) {
-                    playerRef.current.seekTo(savedPosition, true);
-                    playerRef.current.pauseVideo(); // Don't auto-play, just cue up
-                    setCurrentTime(savedPosition); // Update progress bar immediately
-                  }
-                }
-              }, 500);
+              initPlayer(currentSource.videoId, currentSource.id);
             }
           }, 100);
         } else if (currentSource && currentSource.type === 'podcast') {
@@ -5252,7 +5240,7 @@
         }
       };
 
-      const initPlayer = (id) => {
+      const initPlayer = (id, sourceId) => {
         if (playerRef.current && playerRef.current.destroy) {
           playerRef.current.destroy();
         }
@@ -5272,6 +5260,18 @@
               // Update source with duration for Library display
               if (currentSource?.id && dur && isFinite(dur)) {
                 updateSource(currentSource.id, { duration: dur });
+              }
+              // Restore saved position now that player is actually ready
+              if (sourceId) {
+                try {
+                  const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+                  const savedPosition = savedPositions[sourceId];
+                  if (savedPosition) {
+                    event.target.seekTo(savedPosition, true);
+                    event.target.pauseVideo();
+                    setCurrentTime(savedPosition);
+                  }
+                } catch (e) {}
               }
             },
             onStateChange: (event) => {
