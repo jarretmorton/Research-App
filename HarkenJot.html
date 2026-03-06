@@ -1837,16 +1837,16 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // localStorage storage monitoring
-    const getStorageUsageBytes = () => {
+    // localStorage storage monitoring — Chrome/Edge quota is ~5MB measured in string characters
+    const getStorageUsageChars = () => {
       let total = 0;
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        total += (key.length + localStorage.getItem(key).length) * 2; // UTF-16
+        total += key.length + localStorage.getItem(key).length;
       }
       return total;
     };
-    const STORAGE_QUOTA_ESTIMATE = 5 * 1024 * 1024; // 5MB conservative estimate
+    const STORAGE_QUOTA_ESTIMATE = 5 * 1024 * 1024; // ~5M characters
 
     // Detect PDF URLs by extension or known academic/research URL patterns
     const isPdfUrl = (url) => {
@@ -2144,7 +2144,7 @@
           localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
           // Check storage usage after write
           if (!storageWarningShownRef.current) {
-            const usage = getStorageUsageBytes();
+            const usage = getStorageUsageChars();
             if (usage > STORAGE_QUOTA_ESTIMATE * 0.8) {
               storageWarningShownRef.current = true;
               const usedMB = (usage / (1024 * 1024)).toFixed(1);
