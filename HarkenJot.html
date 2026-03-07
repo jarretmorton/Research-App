@@ -2393,7 +2393,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.10.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3046,6 +3046,53 @@
         return { title: finalTitle, text };
       };
 
+      const loadLocalDocFile = async () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.pdf,.docx,.doc';
+        input.onchange = async (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          setLoading(true);
+          try {
+            const data = await file.arrayBuffer();
+            if (file.name.toLowerCase().endsWith('.pdf')) {
+              await processPdfContent(data, '', file.name);
+            } else {
+              // DOCX — lazy-load mammoth.js
+              if (!window.mammoth) {
+                await new Promise((resolve, reject) => {
+                  const s = document.createElement('script');
+                  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+                  s.onload = resolve;
+                  s.onerror = reject;
+                  document.head.appendChild(s);
+                });
+              }
+              const result = await window.mammoth.extractRawText({ arrayBuffer: data });
+              const fullText = result.value.trim();
+              if (!fullText) {
+                showToast('Could not extract text from this document.');
+                setLoading(false);
+                return;
+              }
+              const title = file.name.replace(/\.docx?$/i, '').replace(/[_-]/g, ' ');
+              const sentences = splitIntoSentences(fullText);
+              sentencesRef.current = sentences;
+              const newSource = addSource({ type: 'article', title, url: '', content: fullText, sentences });
+              setContent({ title: newSource.title, sentences, url: '' });
+              setUrl('');
+              showToast('Document loaded!');
+            }
+          } catch (err) {
+            showToast('Failed to load file.');
+          } finally {
+            setLoading(false);
+          }
+        };
+        input.click();
+      };
+
       const fetchContent = async () => {
         if (!url.trim()) return;
 
@@ -3095,7 +3142,7 @@
         };
 
         // Helper: process PDF binary data into a source
-        const processPdfContent = async (pdfData, pdfUrl) => {
+        const processPdfContent = async (pdfData, pdfUrl, filenameHint = '') => {
           pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
           console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
@@ -3178,13 +3225,19 @@
             const metadata = await pdf.getMetadata();
             if (metadata?.info?.Title && metadata.info.Title.trim().length > 3) {
               pdfTitle = metadata.info.Title.trim();
-            } else {
+            } else if (pdfUrl) {
               const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
               pdfTitle = urlSegment || 'PDF Document';
+            } else if (filenameHint) {
+              pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
             }
           } catch (e) {
-            const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
-            pdfTitle = urlSegment || 'PDF Document';
+            if (pdfUrl) {
+              const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+              pdfTitle = urlSegment || 'PDF Document';
+            } else if (filenameHint) {
+              pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            }
           }
 
           const sentences = splitIntoSentences(fullText);
@@ -4144,13 +4197,13 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste article or PDF link..."
+                placeholder="Paste article or PDF URL, or tap Load to open a local file..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && fetchContent()}
+                onKeyPress={(e) => e.key === 'Enter' && url.trim() && fetchContent()}
               />
-              <button className="btn btn-primary" onClick={fetchContent} disabled={loading}>
-                {loading ? 'Loading...' : <><Icons.Link /> Load</>}
+              <button className="btn btn-primary" onClick={() => url.trim() ? fetchContent() : loadLocalDocFile()} disabled={loading}>
+                {loading ? 'Loading...' : url.trim() ? <><Icons.Link /> Load</> : <><Icons.FolderDown /> Load</>}
               </button>
             </div>
 
