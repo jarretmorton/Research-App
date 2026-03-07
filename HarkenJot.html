@@ -1816,6 +1816,17 @@
     ::-webkit-scrollbar-thumb:hover {
       background: var(--text-muted);
     }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
   </style>
 </head>
 <body>
@@ -2393,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6083,6 +6094,7 @@
               <audio
                 ref={audioPlayerRef}
                 src={podcastAudio.audioUrl}
+                preload="metadata"
                 onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
                 onDurationChange={(e) => {
                   const dur = e.target.duration;
@@ -6102,20 +6114,20 @@
                   }
                 }}
                 onError={(e) => {
-                  console.error('Audio load error:', e.target.error);
+                  const error = e.target.error;
+                  const codeDesc = { 1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported' }[error?.code] || 'unknown error';
+                  console.error('Audio load error:', error?.code, codeDesc, error);
                   if (currentSource?.localFile) {
                     if (activeBlobUrlsRef.current.has(currentSource.audioUrl)) {
-                      // Blob URL was created this session — audio format or load issue
-                      showToast('Failed to load audio file — your browser may not support this format');
+                      showToast(`Failed to load audio file (${codeDesc})`);
                     } else {
-                      // Stale blob URL from a previous session
                       setNeedsFileRelink(true);
                     }
                   } else {
-                    showToast('Failed to load audio - the URL may be blocked or unavailable');
+                    showToast(`Failed to load audio (${codeDesc})`);
                   }
                 }}
-                style={{ display: 'none' }}
+                className="sr-only"
               />
 
               {needsFileRelink && (
