@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5177,52 +5177,27 @@
         setIsLoadingPodcast(false);
       };
 
-      // Resolve the correct MIME type for an audio file based on extension
-      const audioMimeMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
-      const getAudioMimeType = (fileName) => {
-        const ext = fileName.split('.').pop().toLowerCase();
-        return audioMimeMap[ext] || null;
-      };
-
-      // Create a blob URL, re-wrapping with correct MIME type if needed
-      // Uses Blob([file]) instead of arrayBuffer() to avoid mobile memory issues
-      const createAudioBlobUrl = (file) => {
-        const correctType = getAudioMimeType(file.name);
+      // Create a blob URL with correct MIME type for audio files
+      // OS may report non-standard types (e.g. audio/x-m4a) that mobile browsers reject
+      const createAudioBlobUrl = async (file) => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const mimeMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
+        const correctType = mimeMap[ext];
         if (correctType && file.type !== correctType) {
-          return URL.createObjectURL(new Blob([file], { type: correctType }));
+          const buffer = await file.arrayBuffer();
+          return URL.createObjectURL(new Blob([buffer], { type: correctType }));
         }
         return URL.createObjectURL(file);
-      };
-
-      // Store the last loaded File so onError can retry with a data URL
-      const pendingAudioFileRef = useRef(null);
-
-      // Fallback: convert a File to a data URL (bypasses mobile blob URL restrictions)
-      const retryWithDataUrl = (file) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const dataUrl = reader.result;
-          activeBlobUrlsRef.current.add(dataUrl);
-          setPodcastAudio(prev => prev ? { ...prev, audioUrl: dataUrl } : prev);
-          if (currentSource?.id) updateSource(currentSource.id, { audioUrl: dataUrl });
-          pendingAudioFileRef.current = null; // Don't retry again
-        };
-        reader.onerror = () => {
-          showToast('Failed to load audio file');
-          pendingAudioFileRef.current = null;
-        };
-        reader.readAsDataURL(file);
       };
 
       const loadLocalAudioFile = () => {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*,.m4a,.m4b,.aac';
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          pendingAudioFileRef.current = file;
-          const blobUrl = createAudioBlobUrl(file);
+          const blobUrl = await createAudioBlobUrl(file);
           activeBlobUrlsRef.current.add(blobUrl);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
@@ -5245,11 +5220,10 @@
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*,.m4a,.m4b,.aac';
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          pendingAudioFileRef.current = file;
-          const blobUrl = createAudioBlobUrl(file);
+          const blobUrl = await createAudioBlobUrl(file);
           activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: blobUrl });
           setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
@@ -6143,12 +6117,6 @@
                   const error = e.target.error;
                   const codeDesc = { 1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported' }[error?.code] || 'unknown error';
                   console.error('Audio load error:', error?.code, codeDesc, error);
-                  // For local files with code 4, retry with data URL (bypasses mobile blob URL issues)
-                  if (error?.code === 4 && pendingAudioFileRef.current) {
-                    console.log('Retrying with data URL fallback...');
-                    retryWithDataUrl(pendingAudioFileRef.current);
-                    return;
-                  }
                   if (currentSource?.localFile) {
                     if (activeBlobUrlsRef.current.has(currentSource.audioUrl)) {
                       showToast(`Failed to load audio file (${codeDesc})`);
