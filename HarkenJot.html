@@ -2393,7 +2393,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3046,6 +3046,124 @@
         return { title: finalTitle, text };
       };
 
+      const processPdfContent = async (pdfData, pdfUrl, filenameHint = '') => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
+
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        console.log('PDF parsed:', pdf.numPages, 'pages');
+
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          if (pdf.numPages > 5) {
+            showToast(`Loading page ${i} of ${pdf.numPages}...`);
+          }
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+
+          // Smart text reconstruction using item positioning
+          let pageText = '';
+          let prevY = null;
+          let prevItemEnd = null;
+
+          for (const item of textContent.items) {
+            if (!item.str) continue;
+
+            const y = item.transform ? item.transform[5] : null;
+            const x = item.transform ? item.transform[4] : null;
+            const fontSize = item.transform
+              ? (Math.abs(item.transform[0]) || Math.abs(item.transform[3]) || 12)
+              : 12;
+
+            if (prevY !== null && y !== null) {
+              const yDiff = Math.abs(y - prevY);
+
+              if (yDiff > fontSize * 1.8) {
+                // Large vertical gap — paragraph break
+                pageText += '\n\n';
+              } else if (yDiff > fontSize * 0.3) {
+                // New line — handle hyphenation
+                if (pageText.endsWith('-')) {
+                  pageText = pageText.slice(0, -1);
+                } else {
+                  pageText += ' ';
+                }
+              } else if (!pageText.endsWith(' ') && !item.str.startsWith(' ')) {
+                // Same line — add space between items if there's a horizontal gap
+                if (prevItemEnd !== null && x !== null && (x - prevItemEnd) > fontSize * 0.15) {
+                  pageText += ' ';
+                }
+              }
+            }
+
+            pageText += item.str;
+
+            if (item.transform) {
+              prevY = y;
+              prevItemEnd = x + (item.width || 0);
+            }
+          }
+
+          fullText += pageText.trim() + '\n\n';
+        }
+
+        // Clean up for sentence splitting — collapse to single-line text
+        fullText = fullText
+          .replace(/\n{2,}/g, '. ')
+          .replace(/\n/g, ' ')
+          .replace(/\.\s*\./g, '.')
+          .replace(/ {2,}/g, ' ')
+          .trim();
+
+        if (!fullText.trim()) {
+          showToast('PDF has no readable text. It may be scanned/image-based.');
+          setShowManualInput(true);
+          setLoading(false);
+          return;
+        }
+
+        // Try to get title from PDF metadata
+        let pdfTitle = 'PDF Document';
+        try {
+          const metadata = await pdf.getMetadata();
+          if (metadata?.info?.Title && metadata.info.Title.trim().length > 3) {
+            pdfTitle = metadata.info.Title.trim();
+          } else if (pdfUrl) {
+            const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            pdfTitle = urlSegment || 'PDF Document';
+          } else if (filenameHint) {
+            pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+          }
+        } catch (e) {
+          if (pdfUrl) {
+            const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            pdfTitle = urlSegment || 'PDF Document';
+          } else if (filenameHint) {
+            pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+          }
+        }
+
+        const sentences = splitIntoSentences(fullText);
+        sentencesRef.current = sentences;
+
+        const newSource = addSource({
+          type: 'pdf',
+          title: pdfTitle,
+          url: pdfUrl,
+          content: fullText
+        });
+
+        setContent({
+          title: newSource.title,
+          sentences: sentences,
+          url: pdfUrl
+        });
+        setUrl('');
+        showToast('PDF loaded successfully!');
+        setLoading(false);
+      };
+
       const loadLocalDocFile = async () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -3139,125 +3257,6 @@
           }
 
           return pdfData;
-        };
-
-        // Helper: process PDF binary data into a source
-        const processPdfContent = async (pdfData, pdfUrl, filenameHint = '') => {
-          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-          console.log('PDF data loaded:', pdfData.byteLength, 'bytes');
-
-          const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-          console.log('PDF parsed:', pdf.numPages, 'pages');
-
-          let fullText = '';
-          for (let i = 1; i <= pdf.numPages; i++) {
-            if (pdf.numPages > 5) {
-              showToast(`Loading page ${i} of ${pdf.numPages}...`);
-            }
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-
-            // Smart text reconstruction using item positioning
-            let pageText = '';
-            let prevY = null;
-            let prevItemEnd = null;
-
-            for (const item of textContent.items) {
-              if (!item.str) continue;
-
-              const y = item.transform ? item.transform[5] : null;
-              const x = item.transform ? item.transform[4] : null;
-              const fontSize = item.transform
-                ? (Math.abs(item.transform[0]) || Math.abs(item.transform[3]) || 12)
-                : 12;
-
-              if (prevY !== null && y !== null) {
-                const yDiff = Math.abs(y - prevY);
-
-                if (yDiff > fontSize * 1.8) {
-                  // Large vertical gap — paragraph break
-                  pageText += '\n\n';
-                } else if (yDiff > fontSize * 0.3) {
-                  // New line — handle hyphenation
-                  if (pageText.endsWith('-')) {
-                    pageText = pageText.slice(0, -1);
-                  } else {
-                    pageText += ' ';
-                  }
-                } else if (!pageText.endsWith(' ') && !item.str.startsWith(' ')) {
-                  // Same line — add space between items if there's a horizontal gap
-                  if (prevItemEnd !== null && x !== null && (x - prevItemEnd) > fontSize * 0.15) {
-                    pageText += ' ';
-                  }
-                }
-              }
-
-              pageText += item.str;
-
-              if (item.transform) {
-                prevY = y;
-                prevItemEnd = x + (item.width || 0);
-              }
-            }
-
-            fullText += pageText.trim() + '\n\n';
-          }
-
-          // Clean up for sentence splitting — collapse to single-line text
-          fullText = fullText
-            .replace(/\n{2,}/g, '. ')
-            .replace(/\n/g, ' ')
-            .replace(/\.\s*\./g, '.')
-            .replace(/ {2,}/g, ' ')
-            .trim();
-
-          if (!fullText.trim()) {
-            showToast('PDF has no readable text. It may be scanned/image-based.');
-            setShowManualInput(true);
-            setLoading(false);
-            return;
-          }
-
-          // Try to get title from PDF metadata
-          let pdfTitle = 'PDF Document';
-          try {
-            const metadata = await pdf.getMetadata();
-            if (metadata?.info?.Title && metadata.info.Title.trim().length > 3) {
-              pdfTitle = metadata.info.Title.trim();
-            } else if (pdfUrl) {
-              const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
-              pdfTitle = urlSegment || 'PDF Document';
-            } else if (filenameHint) {
-              pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
-            }
-          } catch (e) {
-            if (pdfUrl) {
-              const urlSegment = pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
-              pdfTitle = urlSegment || 'PDF Document';
-            } else if (filenameHint) {
-              pdfTitle = filenameHint.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
-            }
-          }
-
-          const sentences = splitIntoSentences(fullText);
-          sentencesRef.current = sentences;
-
-          const newSource = addSource({
-            type: 'pdf',
-            title: pdfTitle,
-            url: pdfUrl,
-            content: fullText
-          });
-
-          setContent({
-            title: newSource.title,
-            sentences: sentences,
-            url: pdfUrl
-          });
-          setUrl('');
-          showToast('PDF loaded successfully!');
-          setLoading(false);
         };
 
         try {
@@ -4455,6 +4454,7 @@
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
+      const activeBlobUrlsRef = useRef(new Set()); // Blob URLs created this session (valid for re-link detection)
       const mediaRecorderRef = useRef(null);
       const streamRef = useRef(null);
       const intervalRef = useRef(null);
@@ -5174,6 +5174,7 @@
           const file = e.target.files[0];
           if (!file) return;
           const blobUrl = URL.createObjectURL(file);
+          activeBlobUrlsRef.current.add(blobUrl);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
           setArtworkFailed(false);
@@ -5199,6 +5200,7 @@
           const file = e.target.files[0];
           if (!file) return;
           const blobUrl = URL.createObjectURL(file);
+          activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: blobUrl });
           setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
           setNeedsFileRelink(false);
@@ -6089,7 +6091,13 @@
                 onError={(e) => {
                   console.error('Audio load error:', e.target.error);
                   if (currentSource?.localFile) {
-                    setNeedsFileRelink(true);
+                    if (activeBlobUrlsRef.current.has(currentSource.audioUrl)) {
+                      // Blob URL was created this session — audio format or load issue
+                      showToast('Failed to load audio file — your browser may not support this format');
+                    } else {
+                      // Stale blob URL from a previous session
+                      setNeedsFileRelink(true);
+                    }
                   } else {
                     showToast('Failed to load audio - the URL may be blocked or unavailable');
                   }
@@ -6099,7 +6107,7 @@
 
               {needsFileRelink && (
                 <div className="relink-banner">
-                  <span>Audio unavailable — local files don't persist across sessions.</span>
+                  <span>Audio unavailable — local files must be re-selected each session.</span>
                   <button type="button" onClick={relinkAudioFile}>Re-link file</button>
                 </div>
               )}
