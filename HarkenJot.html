@@ -2393,7 +2393,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.4</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5167,12 +5167,12 @@
       };
 
       // Create a blob URL with correct MIME type for audio files
-      // Windows may report wrong MIME types for .m4a/.aac files
+      // OS may report non-standard types (e.g. audio/x-m4a) that mobile browsers reject
       const createAudioBlobUrl = async (file) => {
         const ext = file.name.split('.').pop().toLowerCase();
         const mimeMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
         const correctType = mimeMap[ext];
-        if (correctType && (!file.type || !file.type.startsWith('audio/'))) {
+        if (correctType && file.type !== correctType) {
           const buffer = await file.arrayBuffer();
           return URL.createObjectURL(new Blob([buffer], { type: correctType }));
         }
