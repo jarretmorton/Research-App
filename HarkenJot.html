@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.7</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6114,8 +6114,8 @@
 
               {/* Audio element placed early so it loads before artwork */}
               <audio
-                key={podcastAudio.audioUrl}
                 ref={audioPlayerRef}
+                src={podcastAudio.audioUrl}
                 preload="metadata"
                 onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
                 onDurationChange={(e) => {
@@ -6138,10 +6138,10 @@
                 onError={(e) => {
                   const error = e.target.error;
                   const codeDesc = { 1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported' }[error?.code] || 'unknown error';
-                  console.error('Audio load error:', error?.code, codeDesc, error);
+                  console.error('Audio load error:', error?.code, codeDesc, error, 'src:', e.target.src?.substring(0, 50), 'detected:', podcastAudio?.mimeType);
                   if (currentSource?.localFile) {
                     if (activeBlobUrlsRef.current.has(currentSource.audioUrl)) {
-                      showToast(`Failed to load audio file (${codeDesc})`);
+                      showToast(`Failed to load audio file (${codeDesc})${podcastAudio?.mimeType ? ' [detected: ' + podcastAudio.mimeType + ']' : ''}`);
                     } else {
                       setNeedsFileRelink(true);
                     }
@@ -6150,9 +6150,7 @@
                   }
                 }}
                 className="sr-only"
-              >
-                <source src={podcastAudio.audioUrl} type={podcastAudio.mimeType || ''} />
-              </audio>
+              />
 
               {needsFileRelink && (
                 <div className="relink-banner">
