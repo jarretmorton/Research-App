@@ -2393,7 +2393,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5170,10 +5170,15 @@
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*';
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const blobUrl = URL.createObjectURL(file);
+          // Normalize MIME type: browsers reject 'audio/x-m4a' but accept 'audio/mp4'
+          let fileBlob = file;
+          if (file.name.toLowerCase().endsWith('.m4a') && file.type !== 'audio/mp4') {
+            fileBlob = new Blob([await file.arrayBuffer()], { type: 'audio/mp4' });
+          }
+          const blobUrl = URL.createObjectURL(fileBlob);
           activeBlobUrlsRef.current.add(blobUrl);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
@@ -5196,10 +5201,15 @@
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'audio/*';
-        input.onchange = (e) => {
+        input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const blobUrl = URL.createObjectURL(file);
+          // Normalize MIME type: browsers reject 'audio/x-m4a' but accept 'audio/mp4'
+          let fileBlob = file;
+          if (file.name.toLowerCase().endsWith('.m4a') && file.type !== 'audio/mp4') {
+            fileBlob = new Blob([await file.arrayBuffer()], { type: 'audio/mp4' });
+          }
+          const blobUrl = URL.createObjectURL(fileBlob);
           activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: blobUrl });
           setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
