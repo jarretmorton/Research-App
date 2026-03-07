@@ -4197,7 +4197,7 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste article or PDF URL, or tap Load to open a local file..."
+                placeholder="Paste URL, or tap Load to open file..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && url.trim() && fetchContent()}
@@ -4424,7 +4424,7 @@
             <div className="empty-state">
               <div className="empty-state-icon">📖</div>
               <h3>Article Reader</h3>
-              <p>Paste an article or PDF link above to begin. The app will read it aloud and let you take notes while you listen.</p>
+              <p>Paste an article or PDF link above or Load a word or PDF file to begin. The app will read it aloud and let you take notes while you listen.</p>
             </div>
           )}
         </div>
@@ -5883,7 +5883,7 @@
               <input
                 type="text"
                 className="url-input"
-                placeholder="Paste YouTube, podcast, or RSS feed link, or tap Load to browse a local audio file..."
+                placeholder="Paste URL or tap Load to open file..."
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
               />
@@ -6270,7 +6270,7 @@
             <div className="empty-state">
               <div className="empty-state-icon">🎙️</div>
               <h3>Media Player</h3>
-              <p>Paste a YouTube, Spotify, or podcast RSS feed link above to begin. The app will play it and let you take notes while you listen.</p>
+              <p>Paste a YouTube, Spotify, or podcast RSS feed link above or Load a WAV file to begin. The app will play it and let you take notes while you listen.</p>
             </div>
           )}
         </div>
