@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.9</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.12.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5234,7 +5234,7 @@
           // Use data URL for playback (works on mobile), but DON'T store it in source
           setPodcastAudio({ audioUrl: dataUrl, title, showName: '', artworkUrl: '', link: '' });
           activeBlobUrlsRef.current.add(dataUrl);
-          addSource({
+          const newSource = addSource({
             type: 'podcast',
             title,
             url: '',
@@ -5242,6 +5242,8 @@
             localFile: true,
             fileName: file.name,
           });
+          // Mark as already initialized so useEffect doesn't overwrite podcastAudio
+          lastInitializedSourceRef.current = newSource.id;
           showToast('Audio file loaded');
         };
         input.click();
