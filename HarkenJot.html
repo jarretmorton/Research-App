@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.12.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.12.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5212,18 +5212,18 @@
         return extMap[ext] || file.type || 'application/octet-stream';
       };
 
-      // Process a local audio file for playback:
-      // 1. Reads as ArrayBuffer to access raw bytes
-      // 2. Rewrites MPEG-DASH ftyp brand ('dash' → 'isom') for mobile compatibility
-      //    NotebookLM exports MP4 with ftypdash brand; Android Chrome/Edge rejects this
-      //    because 'dash' implies adaptive streaming requiring a manifest (MPD)
-      // 3. Creates a Blob with correct MIME type and returns a blob URL
+      // Process a local audio file for playback using MediaSource Extensions (MSE).
+      // Mobile Android Chrome/Edge rejects regular blob URLs for audio with
+      // MEDIA_ERR_SRC_NOT_SUPPORTED. MSE feeds audio data through the browser's
+      // streaming media pipeline, which mobile browsers fully support (it's how
+      // YouTube/Spotify web work on mobile). Falls back to regular blob URL on
+      // browsers without MSE support.
       const processLocalAudioFile = async (file) => {
-        const mimeType = await detectAudioMimeType(file);
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
-        // Rewrite ftyp major brand: 'dash' → 'isom' (standard ISO Base Media File Format)
+        // Rewrite MPEG-DASH ftyp brand ('dash' → 'isom') for broader compatibility.
+        // NotebookLM exports MP4 audio with ftypdash brand which some decoders reject.
         if (bytes.length > 11 &&
             bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 &&
             bytes[8] === 0x64 && bytes[9] === 0x61 && bytes[10] === 0x73 && bytes[11] === 0x68) {
@@ -5233,6 +5233,43 @@
           bytes[11] = 0x6D; // m
         }
 
+        // Try MSE — the standard way mobile browsers handle MP4 audio/video
+        if (window.MediaSource) {
+          const codecs = [
+            'audio/mp4; codecs="mp4a.40.2"',  // AAC-LC (most common)
+            'audio/mp4; codecs="mp4a.40.5"',  // HE-AAC v1
+            'audio/mp4; codecs="mp4a.40.29"', // HE-AAC v2
+          ];
+          const mimeCodec = codecs.find(c => MediaSource.isTypeSupported(c));
+
+          if (mimeCodec) {
+            const mediaSource = new MediaSource();
+            const url = URL.createObjectURL(mediaSource);
+
+            mediaSource.addEventListener('sourceopen', () => {
+              try {
+                const sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+                sourceBuffer.appendBuffer(buffer);
+                sourceBuffer.addEventListener('updateend', () => {
+                  try {
+                    if (mediaSource.readyState === 'open') {
+                      mediaSource.endOfStream();
+                    }
+                  } catch (e) {
+                    console.warn('MSE endOfStream error:', e);
+                  }
+                });
+              } catch (e) {
+                console.warn('MSE SourceBuffer error:', e);
+              }
+            });
+
+            return url;
+          }
+        }
+
+        // Fallback: regular blob URL (works on desktop, may fail on mobile)
+        const mimeType = await detectAudioMimeType(file);
         const blob = new Blob([buffer], { type: mimeType });
         return URL.createObjectURL(blob);
       };
