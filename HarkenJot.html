@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.12.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.12.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5212,13 +5212,30 @@
         return extMap[ext] || file.type || 'application/octet-stream';
       };
 
-      // Read a File as a data URL (for mobile browsers that can't play blob URLs)
-      const readAsDataUrl = (file) => new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
+      // Process a local audio file for playback:
+      // 1. Reads as ArrayBuffer to access raw bytes
+      // 2. Rewrites MPEG-DASH ftyp brand ('dash' → 'isom') for mobile compatibility
+      //    NotebookLM exports MP4 with ftypdash brand; Android Chrome/Edge rejects this
+      //    because 'dash' implies adaptive streaming requiring a manifest (MPD)
+      // 3. Creates a Blob with correct MIME type and returns a blob URL
+      const processLocalAudioFile = async (file) => {
+        const mimeType = await detectAudioMimeType(file);
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+
+        // Rewrite ftyp major brand: 'dash' → 'isom' (standard ISO Base Media File Format)
+        if (bytes.length > 11 &&
+            bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 &&
+            bytes[8] === 0x64 && bytes[9] === 0x61 && bytes[10] === 0x73 && bytes[11] === 0x68) {
+          bytes[8]  = 0x69; // i
+          bytes[9]  = 0x73; // s
+          bytes[10] = 0x6F; // o
+          bytes[11] = 0x6D; // m
+        }
+
+        const blob = new Blob([buffer], { type: mimeType });
+        return URL.createObjectURL(blob);
+      };
 
       const loadLocalAudioFile = () => {
         const input = document.createElement('input');
@@ -5227,13 +5244,12 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const dataUrl = await readAsDataUrl(file);
+          const blobUrl = await processLocalAudioFile(file);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
           setArtworkFailed(false);
-          // Use data URL for playback (works on mobile), but DON'T store it in source
-          setPodcastAudio({ audioUrl: dataUrl, title, showName: '', artworkUrl: '', link: '' });
-          activeBlobUrlsRef.current.add(dataUrl);
+          setPodcastAudio({ audioUrl: blobUrl, title, showName: '', artworkUrl: '', link: '' });
+          activeBlobUrlsRef.current.add(blobUrl);
           const newSource = addSource({
             type: 'podcast',
             title,
@@ -5256,10 +5272,10 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const dataUrl = await readAsDataUrl(file);
-          activeBlobUrlsRef.current.add(dataUrl);
+          const blobUrl = await processLocalAudioFile(file);
+          activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: '' }); // Keep localStorage small
-          setPodcastAudio(prev => ({ ...prev, audioUrl: dataUrl }));
+          setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
           setNeedsFileRelink(false);
           showToast('Audio file re-linked');
         };
