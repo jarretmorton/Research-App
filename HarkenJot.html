@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.8</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.9</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4519,9 +4519,17 @@
 
           // Check if audioUrl is missing (older sources might not have it)
           if (!currentSource.audioUrl) {
-            showToast('This podcast is missing its audio URL - please re-add it from the original link');
-            setVideoId(null);
-            setPodcastAudio(null);
+            if (currentSource.localFile) {
+              // Local files use data URLs that aren't persisted — show relink banner
+              setVideoId(null);
+              setArtworkFailed(false);
+              setNeedsFileRelink(true);
+              setPodcastAudio({ audioUrl: '', title: currentSource.title, showName: '', artworkUrl: currentSource.artworkUrl || '', link: '' });
+            } else {
+              showToast('This podcast is missing its audio URL - please re-add it from the original link');
+              setVideoId(null);
+              setPodcastAudio(null);
+            }
             return;
           }
 
@@ -5204,13 +5212,13 @@
         return extMap[ext] || file.type || 'application/octet-stream';
       };
 
-      // Create a URL for a local audio file — uses the original File object (no Blob re-wrapping)
-      // and detects the actual MIME type via magic bytes for the <source type> hint
-      const prepareAudioFile = async (file) => {
-        const mimeType = await detectAudioMimeType(file);
-        const url = URL.createObjectURL(file);
-        return { url, mimeType };
-      };
+      // Read a File as a data URL (for mobile browsers that can't play blob URLs)
+      const readAsDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
 
       const loadLocalAudioFile = () => {
         const input = document.createElement('input');
@@ -5219,17 +5227,18 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const { url: blobUrl, mimeType } = await prepareAudioFile(file);
-          activeBlobUrlsRef.current.add(blobUrl);
+          const dataUrl = await readAsDataUrl(file);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
           setArtworkFailed(false);
-          setPodcastAudio({ audioUrl: blobUrl, mimeType, title, showName: '', artworkUrl: '', link: '' });
+          // Use data URL for playback (works on mobile), but DON'T store it in source
+          setPodcastAudio({ audioUrl: dataUrl, title, showName: '', artworkUrl: '', link: '' });
+          activeBlobUrlsRef.current.add(dataUrl);
           addSource({
             type: 'podcast',
             title,
             url: '',
-            audioUrl: blobUrl,
+            audioUrl: '', // Don't store data URL in localStorage — too large
             localFile: true,
             fileName: file.name,
           });
@@ -5245,10 +5254,10 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const { url: blobUrl, mimeType } = await prepareAudioFile(file);
-          activeBlobUrlsRef.current.add(blobUrl);
-          updateSource(currentSource.id, { audioUrl: blobUrl });
-          setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl, mimeType }));
+          const dataUrl = await readAsDataUrl(file);
+          activeBlobUrlsRef.current.add(dataUrl);
+          updateSource(currentSource.id, { audioUrl: '' }); // Keep localStorage small
+          setPodcastAudio(prev => ({ ...prev, audioUrl: dataUrl }));
           setNeedsFileRelink(false);
           showToast('Audio file re-linked');
         };
@@ -6138,11 +6147,13 @@
                 onError={(e) => {
                   const error = e.target.error;
                   const codeDesc = { 1: 'aborted', 2: 'network error', 3: 'decode error', 4: 'format not supported' }[error?.code] || 'unknown error';
-                  console.error('Audio load error:', error?.code, codeDesc, error, 'src:', e.target.src?.substring(0, 50), 'detected:', podcastAudio?.mimeType);
+                  console.error('Audio load error:', error?.code, codeDesc, error);
                   if (currentSource?.localFile) {
-                    if (activeBlobUrlsRef.current.has(currentSource.audioUrl)) {
-                      showToast(`Failed to load audio file (${codeDesc})${podcastAudio?.mimeType ? ' [detected: ' + podcastAudio.mimeType + ']' : ''}`);
+                    if (activeBlobUrlsRef.current.has(podcastAudio?.audioUrl)) {
+                      // Data URL was created this session — actual playback failure
+                      showToast(`Failed to load audio file (${codeDesc})`);
                     } else {
+                      // Stale URL from a previous session — need to re-select file
                       setNeedsFileRelink(true);
                     }
                   } else {
