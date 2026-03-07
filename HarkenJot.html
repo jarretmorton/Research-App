@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.7</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5204,13 +5204,12 @@
         return extMap[ext] || file.type || 'application/octet-stream';
       };
 
-      // Create a blob URL with the correct MIME type based on actual file content
-      const createAudioBlobUrl = async (file) => {
-        const detectedType = await detectAudioMimeType(file);
-        if (file.type !== detectedType) {
-          return URL.createObjectURL(new Blob([file], { type: detectedType }));
-        }
-        return URL.createObjectURL(file);
+      // Create a URL for a local audio file — uses the original File object (no Blob re-wrapping)
+      // and detects the actual MIME type via magic bytes for the <source type> hint
+      const prepareAudioFile = async (file) => {
+        const mimeType = await detectAudioMimeType(file);
+        const url = URL.createObjectURL(file);
+        return { url, mimeType };
       };
 
       const loadLocalAudioFile = () => {
@@ -5220,12 +5219,12 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const blobUrl = await createAudioBlobUrl(file);
+          const { url: blobUrl, mimeType } = await prepareAudioFile(file);
           activeBlobUrlsRef.current.add(blobUrl);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
           setArtworkFailed(false);
-          setPodcastAudio({ audioUrl: blobUrl, title, showName: '', artworkUrl: '', link: '' });
+          setPodcastAudio({ audioUrl: blobUrl, mimeType, title, showName: '', artworkUrl: '', link: '' });
           addSource({
             type: 'podcast',
             title,
@@ -5246,10 +5245,10 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          const blobUrl = await createAudioBlobUrl(file);
+          const { url: blobUrl, mimeType } = await prepareAudioFile(file);
           activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: blobUrl });
-          setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
+          setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl, mimeType }));
           setNeedsFileRelink(false);
           showToast('Audio file re-linked');
         };
@@ -6115,8 +6114,8 @@
 
               {/* Audio element placed early so it loads before artwork */}
               <audio
+                key={podcastAudio.audioUrl}
                 ref={audioPlayerRef}
-                src={podcastAudio.audioUrl}
                 preload="metadata"
                 onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
                 onDurationChange={(e) => {
@@ -6151,7 +6150,9 @@
                   }
                 }}
                 className="sr-only"
-              />
+              >
+                <source src={podcastAudio.audioUrl} type={podcastAudio.mimeType || ''} />
+              </audio>
 
               {needsFileRelink && (
                 <div className="relink-banner">
