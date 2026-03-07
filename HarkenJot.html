@@ -2393,7 +2393,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5166,19 +5166,27 @@
         setIsLoadingPodcast(false);
       };
 
+      // Create a blob URL with correct MIME type for audio files
+      // Windows may report wrong MIME types for .m4a/.aac files
+      const createAudioBlobUrl = async (file) => {
+        const ext = file.name.split('.').pop().toLowerCase();
+        const mimeMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
+        const correctType = mimeMap[ext];
+        if (correctType && (!file.type || !file.type.startsWith('audio/'))) {
+          const buffer = await file.arrayBuffer();
+          return URL.createObjectURL(new Blob([buffer], { type: correctType }));
+        }
+        return URL.createObjectURL(file);
+      };
+
       const loadLocalAudioFile = () => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'audio/*';
+        input.accept = 'audio/*,.m4a,.m4b,.aac';
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          // Normalize MIME type: browsers reject 'audio/x-m4a' but accept 'audio/mp4'
-          let fileBlob = file;
-          if (file.name.toLowerCase().endsWith('.m4a') && file.type !== 'audio/mp4') {
-            fileBlob = new Blob([await file.arrayBuffer()], { type: 'audio/mp4' });
-          }
-          const blobUrl = URL.createObjectURL(fileBlob);
+          const blobUrl = await createAudioBlobUrl(file);
           activeBlobUrlsRef.current.add(blobUrl);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
@@ -5200,16 +5208,11 @@
       const relinkAudioFile = () => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'audio/*';
+        input.accept = 'audio/*,.m4a,.m4b,.aac';
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          // Normalize MIME type: browsers reject 'audio/x-m4a' but accept 'audio/mp4'
-          let fileBlob = file;
-          if (file.name.toLowerCase().endsWith('.m4a') && file.type !== 'audio/mp4') {
-            fileBlob = new Blob([await file.arrayBuffer()], { type: 'audio/mp4' });
-          }
-          const blobUrl = URL.createObjectURL(fileBlob);
+          const blobUrl = await createAudioBlobUrl(file);
           activeBlobUrlsRef.current.add(blobUrl);
           updateSource(currentSource.id, { audioUrl: blobUrl });
           setPodcastAudio(prev => ({ ...prev, audioUrl: blobUrl }));
