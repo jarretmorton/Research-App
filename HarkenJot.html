@@ -2404,7 +2404,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.11.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5177,15 +5177,38 @@
         setIsLoadingPodcast(false);
       };
 
-      // Create a blob URL with correct MIME type for audio files
-      // OS may report non-standard types (e.g. audio/x-m4a) that mobile browsers reject
-      const createAudioBlobUrl = async (file) => {
+      // Detect actual audio format by reading file magic bytes (first 12 bytes)
+      // File extensions can lie (e.g. NotebookLM exports WAV with .m4a extension)
+      const detectAudioMimeType = async (file) => {
+        try {
+          const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+          const match = (offset, bytes) => bytes.every((b, i) => header[offset + i] === b);
+          // WAV: RIFF....WAVE
+          if (match(0, [0x52, 0x49, 0x46, 0x46]) && match(8, [0x57, 0x41, 0x56, 0x45])) return 'audio/wav';
+          // OGG: OggS
+          if (match(0, [0x4F, 0x67, 0x67, 0x53])) return 'audio/ogg';
+          // FLAC: fLaC
+          if (match(0, [0x66, 0x4C, 0x61, 0x43])) return 'audio/flac';
+          // WebM: EBML header
+          if (match(0, [0x1A, 0x45, 0xDF, 0xA3])) return 'audio/webm';
+          // M4A/MP4: ftyp box at offset 4
+          if (match(4, [0x66, 0x74, 0x79, 0x70])) return 'audio/mp4';
+          // MP3: ID3v2 tag
+          if (match(0, [0x49, 0x44, 0x33])) return 'audio/mpeg';
+          // MP3/AAC: frame sync (0xFF with upper bits set)
+          if (header[0] === 0xFF && (header[1] & 0xE0) === 0xE0) return 'audio/mpeg';
+        } catch (e) { /* fall through to extension-based detection */ }
+        // Fallback: map by extension
         const ext = file.name.split('.').pop().toLowerCase();
-        const mimeMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
-        const correctType = mimeMap[ext];
-        if (correctType && file.type !== correctType) {
-          const buffer = await file.arrayBuffer();
-          return URL.createObjectURL(new Blob([buffer], { type: correctType }));
+        const extMap = { m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', webm: 'audio/webm', flac: 'audio/flac' };
+        return extMap[ext] || file.type || 'application/octet-stream';
+      };
+
+      // Create a blob URL with the correct MIME type based on actual file content
+      const createAudioBlobUrl = async (file) => {
+        const detectedType = await detectAudioMimeType(file);
+        if (file.type !== detectedType) {
+          return URL.createObjectURL(new Blob([file], { type: detectedType }));
         }
         return URL.createObjectURL(file);
       };
