@@ -2453,7 +2453,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3833,23 +3833,23 @@
         };
       }, [content, currentSource]);
 
-      // Manage silent audio and media session playback state for TTS.
-      // Silent audio is kept running while content is present so that the media
-      // notification persists after pausing (showing a play button), matching
-      // how podcast/YouTube notifications behave. It is only stopped when content
-      // is removed — unmount cleanup is handled by the effect below.
+      // Manage silent audio for TTS media session.
+      // Mirrors how podcast <audio> works: the browser derives the play/pause
+      // button state from the audio element itself — play() → pause button,
+      // pause() → play button. setPlaybackState() is NOT used here because it
+      // gets overridden by the actual audio element state.
       useEffect(() => {
         if (!('mediaSession' in navigator)) return;
 
         if (isPlaying && content) {
           const silentAudio = MediaSessionManager.initSilentAudio();
           silentAudio.play().catch(err => console.log('Silent audio play error:', err));
-          MediaSessionManager.setPlaybackState('playing');
-        } else if (content) {
-          // Paused: keep silent audio running so notification stays with a play button
-          MediaSessionManager.setPlaybackState('paused');
+        } else if (content && MediaSessionManager.silentAudio) {
+          // Paused: pause (not stop) the audio element so the browser shows a
+          // play button natively, and the notification stays visible.
+          MediaSessionManager.silentAudio.pause();
         } else {
-          // No content: dismiss notification
+          // No content: fully stop and dismiss notification
           MediaSessionManager.stopSilentAudio();
         }
       }, [isPlaying, content]);
@@ -4813,6 +4813,26 @@
           MediaSessionManager.setPlaybackState(isPlaying ? 'playing' : 'paused');
         }
       }, [isPlaying, podcastAudio, videoId]);
+
+      // Silent audio anchor for YouTube: the YouTube IFrame runs in a child
+      // frame whose media session overrides our parent-frame setPlaybackState()
+      // calls. Playing silent audio in the parent frame gives our media session
+      // an explicit audio anchor, so the browser derives play/pause button state
+      // from it natively (same mechanism as podcast <audio>).
+      useEffect(() => {
+        if (!videoId || !('mediaSession' in navigator)) return;
+        if (isPlaying) {
+          const silentAudio = MediaSessionManager.initSilentAudio();
+          silentAudio.play().catch(err => console.log('Silent audio play error:', err));
+        } else if (MediaSessionManager.silentAudio) {
+          MediaSessionManager.silentAudio.pause();
+        }
+      }, [isPlaying, videoId]);
+
+      // Stop YouTube silent audio when switching away or unmounting
+      useEffect(() => {
+        return () => MediaSessionManager.stopSilentAudio();
+      }, [videoId]);
 
       // Update Media Session position state when time/duration changes
       useEffect(() => {
