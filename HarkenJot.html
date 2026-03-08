@@ -2437,7 +2437,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3706,6 +3706,11 @@
         setIsPlaying(true);
         requestWakeLock(); // Keep screen on during playback
         setCurrentSentenceIndex(index);
+
+        // Clear the speech queue before speaking. On mobile Chrome, stale/failed
+        // utterances in the queue cause new ones to get 'canceled' errors.
+        window.speechSynthesis.cancel();
+
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
 
@@ -3725,8 +3730,8 @@
           const nextIndex = index + 1;
           setCurrentSentenceIndex(nextIndex);
           if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
-            // setTimeout prevents Chrome from silently dropping speak() called directly in onend
-            setTimeout(() => speakFromIndexRef.current(nextIndex), 0);
+            // Delay gives mobile Chrome's speech engine time to reset between utterances
+            setTimeout(() => speakFromIndexRef.current(nextIndex), 50);
           } else {
             setIsPlaying(false);
             releaseWakeLock(); // Release when playback ends
@@ -3747,7 +3752,7 @@
           // (may silently fail with no onend/onerror, halting TTS entirely).
           const nextIndex = index + 1;
           if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
-            setTimeout(() => speakFromIndexRef.current(nextIndex), 50);
+            setTimeout(() => speakFromIndexRef.current(nextIndex), 100);
           } else {
             setIsPlaying(false);
             releaseWakeLock();
@@ -3755,7 +3760,10 @@
         };
 
         utteranceRef.current = utterance;
-        window.speechSynthesis.speak(utterance);
+        // Short delay after cancel() lets the speech engine fully reset, especially on mobile
+        setTimeout(() => {
+          window.speechSynthesis.speak(utterance);
+        }, 10);
       }, [content, speed, currentSource, updateSource, showToast]);
 
       // Keep the ref updated with the latest speakFromIndex function
@@ -3763,9 +3771,10 @@
         speakFromIndexRef.current = speakFromIndex;
       }, [speakFromIndex]);
 
-      // Chrome keepalive: pause+resume every 10s to prevent the ~15-second speechSynthesis freeze bug
+      // Chrome keepalive: pause+resume every 10s to prevent the ~15-second speechSynthesis freeze bug.
+      // Desktop only — on mobile Chrome, pause() kills the utterance instead of pausing it.
       useEffect(() => {
-        if (!isPlaying) return;
+        if (!isPlaying || isMobileDevice) return;
         const id = setInterval(() => {
           if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
             window.speechSynthesis.pause();
@@ -3773,7 +3782,7 @@
           }
         }, 10000);
         return () => clearInterval(id);
-      }, [isPlaying]);
+      }, [isPlaying, isMobileDevice]);
 
       // Apply speed changes immediately while playing
       const prevSpeedRef = useRef(speed);
@@ -3845,26 +3854,34 @@
         };
       }, [content, currentSource]);
 
-      // Start/stop silent audio and update playback state for TTS media session
+      // Start/stop silent audio and update playback state for TTS media session.
+      // On mobile, skip the silent audio — it competes for audio focus and prevents
+      // SpeechSynthesis from producing sound (mobile Chrome enforces exclusive audio focus).
       useEffect(() => {
         if (!('mediaSession' in navigator)) return;
 
         if (isPlaying && content) {
-          // Start silent audio to activate media session
-          const silentAudio = MediaSessionManager.initSilentAudio();
-          silentAudio.play().catch(err => console.log('Silent audio play error:', err));
+          if (!isMobileDevice) {
+            // Desktop: silent audio activates Media Session for lock screen controls
+            const silentAudio = MediaSessionManager.initSilentAudio();
+            silentAudio.play().catch(err => console.log('Silent audio play error:', err));
+          }
           MediaSessionManager.setPlaybackState('playing');
         } else {
-          MediaSessionManager.stopSilentAudio();
+          if (!isMobileDevice) {
+            MediaSessionManager.stopSilentAudio();
+          }
           if (content) {
             MediaSessionManager.setPlaybackState('paused');
           }
         }
 
         return () => {
-          MediaSessionManager.stopSilentAudio();
+          if (!isMobileDevice) {
+            MediaSessionManager.stopSilentAudio();
+          }
         };
-      }, [isPlaying, content]);
+      }, [isPlaying, content, isMobileDevice]);
 
       // Update Media Session position state for TTS (sentence-based progress)
       useEffect(() => {
