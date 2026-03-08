@@ -1598,6 +1598,35 @@
       gap: 0.75rem;
     }
 
+    .source-picker-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 50vh;
+      overflow-y: auto;
+    }
+    .source-picker-item {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .source-picker-item:hover {
+      background: var(--bg-secondary);
+    }
+    .source-picker-item:last-child {
+      border-bottom: none;
+    }
+    .source-picker-item .title {
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .source-picker-item .meta {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+
     /* Text Note Input */
     .text-note-container {
       padding: 0.75rem 1.5rem;
@@ -2408,7 +2437,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.13.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2485,6 +2514,7 @@
                   updateSource={updateSource}
                   addNote={addNote}
                   notes={currentNotes}
+                  sources={sources}
                   showToast={showToast}
                   setActiveTab={setActiveTab}
                   carMode={carMode}
@@ -2608,6 +2638,71 @@
         >
           {title}<span style={{ opacity: 0.4, display: 'inline-flex', verticalAlign: 'middle', marginLeft: '0.4rem', flexShrink: 0 }}><Icons.Eraser /></span>
         </h2>
+      );
+    };
+
+    const NotebookLMModal = ({ show, sources, onConfirmNotebookLM, onLinkSource, onClose }) => {
+      const [step, setStep] = useState('ask');
+
+      useEffect(() => {
+        if (show) setStep('ask');
+      }, [show]);
+
+      if (!show) return null;
+
+      const articleSources = (sources || [])
+        .filter(s => s.type === 'article' || s.type === 'pdf')
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      return (
+        <div className={`modal-overlay ${show ? 'show' : ''}`} onClick={onClose}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            {step === 'ask' ? (
+              <>
+                <div className="modal-header">
+                  <span className="modal-title">NotebookLM Podcast?</span>
+                  <button type="button" className="modal-close" onClick={onClose}>&times;</button>
+                </div>
+                <div className="modal-body" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
+                  <div style={{ marginBottom: '1.5rem' }}><Icons.NotebookLM size={64} /></div>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Is this audio file a NotebookLM podcast?</p>
+                  <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                    <button type="button" className="action-button" onClick={onClose} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>No</button>
+                    <button type="button" className="action-button" onClick={() => { onConfirmNotebookLM(); setStep('pick'); }} style={{ background: 'var(--accent)', color: 'white' }}>Yes</button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="modal-header">
+                  <span className="modal-title">Link to Article</span>
+                  <button type="button" className="modal-close" onClick={onClose}>&times;</button>
+                </div>
+                <div className="modal-body" style={{ padding: articleSources.length > 0 ? '0' : '1.5rem' }}>
+                  {articleSources.length > 0 ? (
+                    <ul className="source-picker-list">
+                      {articleSources.map(source => (
+                        <li key={source.id} className="source-picker-item" onClick={() => { onLinkSource(source.id); onClose(); }}>
+                          <div className="title">{source.title}</div>
+                          <div className="meta">
+                            <span className={`library-item-type ${source.type}`}>{source.type}</span>
+                            {' '}&middot;{' '}
+                            {new Date(source.createdAt).toLocaleDateString()}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No articles or PDFs in your library yet. You can link one later.</p>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="action-button" onClick={onClose} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Skip</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       );
     };
 
@@ -4446,7 +4541,7 @@
     });
 
     // Media View Component
-    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, showToast, setActiveTab, carMode, setCarMode, isMobileDevice }, ref) => {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, sources, showToast, setActiveTab, carMode, setCarMode, isMobileDevice }, ref) => {
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
@@ -4466,6 +4561,7 @@
       const [speed, setSpeed] = useState(1);
       const [artworkFailed, setArtworkFailed] = useState(false);
       const [isLoadingArtwork, setIsLoadingArtwork] = useState(false);
+      const [showNotebookLMModal, setShowNotebookLMModal] = useState(false);
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -5278,6 +5374,19 @@
         return URL.createObjectURL(blob);
       };
 
+      const handleConfirmNotebookLM = () => {
+        if (currentSource) {
+          updateSource(currentSource.id, { isNotebookLM: true });
+        }
+      };
+
+      const handleLinkSource = (linkedSourceId) => {
+        if (currentSource) {
+          updateSource(currentSource.id, { linkedSourceId });
+        }
+        showToast('Linked to article');
+      };
+
       const loadLocalAudioFile = () => {
         const input = document.createElement('input');
         input.type = 'file';
@@ -5302,6 +5411,7 @@
           // Mark as already initialized so useEffect doesn't overwrite podcastAudio
           lastInitializedSourceRef.current = newSource.id;
           showToast('Audio file loaded');
+          setShowNotebookLMModal(true);
         };
         input.click();
       };
@@ -6179,6 +6289,23 @@
                     {podcastAudio.link && <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
                     {(podcastAudio.link || currentSource.url) && <button type="button" title="Open in NotebookLM (copies URL)" onClick={() => { const u = podcastAudio.link || currentSource.url; navigator.clipboard.writeText(u).catch(() => {}); window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); showToast('URL copied — paste into NotebookLM to add as a source'); }}><Icons.NotebookLM /></button>}
                   </div>
+                  {currentSource?.linkedSourceId && (() => {
+                    const linkedSource = sources.find(s => s.id === currentSource.linkedSourceId);
+                    if (!linkedSource) return null;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        <Icons.Link />
+                        <span>Linked to</span>
+                        <button
+                          type="button"
+                          onClick={() => { setCurrentSource(linkedSource); setActiveTab('reader'); }}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', textDecoration: 'underline' }}
+                        >
+                          {linkedSource.title}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -6232,7 +6359,7 @@
               )}
 
               {!carMode && (() => {
-                const isNotebookLM = currentSource && (currentSource.title || '').toLowerCase().includes('notebooklm');
+                const isNotebookLM = currentSource && (currentSource.isNotebookLM || (currentSource.title || '').toLowerCase().includes('notebooklm'));
                 return (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', alignItems: 'center' }}>
                   {isNotebookLM ? (
@@ -6420,6 +6547,13 @@
               <p>Paste a YouTube, Spotify, or podcast RSS feed link above or load a WAV file to begin. The app will play it and let you take notes while you listen.</p>
             </div>
           )}
+          <NotebookLMModal
+            show={showNotebookLMModal}
+            sources={sources}
+            onConfirmNotebookLM={handleConfirmNotebookLM}
+            onLinkSource={handleLinkSource}
+            onClose={() => setShowNotebookLMModal(false)}
+          />
         </div>
       );
     });
