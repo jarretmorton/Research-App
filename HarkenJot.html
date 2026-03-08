@@ -2453,7 +2453,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3813,40 +3813,9 @@
               setIsPlaying(false);
               releaseWakeLock();
             },
-            onSeekBackward: () => {
-              // Go to previous sentence (or restart current if already at first)
-              const idx = currentSentenceIndexRef.current;
-              wasCancelledRef.current = true;
-              window.speechSynthesis.cancel();
-              const prevIdx = Math.max(0, idx - 1);
-              setCurrentSentenceIndex(prevIdx);
-              if (isPlayingRef.current && speakFromIndexRef.current) {
-                setTimeout(() => speakFromIndexRef.current(prevIdx), 50);
-              }
-            },
-            onSeekForward: () => {
-              // Go to next sentence
-              const idx = currentSentenceIndexRef.current;
-              const maxIdx = sentencesRef.current.length - 1;
-              if (idx < maxIdx) {
-                wasCancelledRef.current = true;
-                window.speechSynthesis.cancel();
-                const nextIdx = idx + 1;
-                setCurrentSentenceIndex(nextIdx);
-                if (isPlayingRef.current && speakFromIndexRef.current) {
-                  setTimeout(() => speakFromIndexRef.current(nextIdx), 50);
-                }
-              }
-            },
-            onPreviousTrack: () => {
-              // Jump to beginning
-              wasCancelledRef.current = true;
-              window.speechSynthesis.cancel();
-              setCurrentSentenceIndex(0);
-              if (isPlayingRef.current && speakFromIndexRef.current) {
-                setTimeout(() => speakFromIndexRef.current(0), 50);
-              }
-            },
+            onSeekBackward: null,
+            onSeekForward: null,
+            onPreviousTrack: null,
             onNextTrack: null
           });
 
@@ -3864,26 +3833,31 @@
         };
       }, [content, currentSource]);
 
-      // Start/stop silent audio and update playback state for TTS media session
+      // Manage silent audio and media session playback state for TTS.
+      // Silent audio is kept running while content is present so that the media
+      // notification persists after pausing (showing a play button), matching
+      // how podcast/YouTube notifications behave. It is only stopped when content
+      // is removed — unmount cleanup is handled by the effect below.
       useEffect(() => {
         if (!('mediaSession' in navigator)) return;
 
         if (isPlaying && content) {
-          // Start silent audio to activate media session
           const silentAudio = MediaSessionManager.initSilentAudio();
           silentAudio.play().catch(err => console.log('Silent audio play error:', err));
           MediaSessionManager.setPlaybackState('playing');
+        } else if (content) {
+          // Paused: keep silent audio running so notification stays with a play button
+          MediaSessionManager.setPlaybackState('paused');
         } else {
+          // No content: dismiss notification
           MediaSessionManager.stopSilentAudio();
-          if (content) {
-            MediaSessionManager.setPlaybackState('paused');
-          }
         }
-
-        return () => {
-          MediaSessionManager.stopSilentAudio();
-        };
       }, [isPlaying, content]);
+
+      // Stop silent audio when ReaderView unmounts
+      useEffect(() => {
+        return () => MediaSessionManager.stopSilentAudio();
+      }, []);
 
       // Update Media Session position state for TTS (sentence-based progress)
       useEffect(() => {
@@ -4794,9 +4768,9 @@
           MediaSessionManager.setActionHandlers({
             onPlay: () => audioPlayerRef.current?.play(),
             onPause: () => audioPlayerRef.current?.pause(),
-            onSeekBackward: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime -= 15; },
-            onSeekForward: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime += 15; },
-            onPreviousTrack: () => { if (audioPlayerRef.current) audioPlayerRef.current.currentTime = 0; },
+            onSeekBackward: null,
+            onSeekForward: null,
+            onPreviousTrack: null,
             onNextTrack: null
           });
 
@@ -4812,9 +4786,9 @@
           MediaSessionManager.setActionHandlers({
             onPlay: () => playerRef.current?.playVideo(),
             onPause: () => playerRef.current?.pauseVideo(),
-            onSeekBackward: () => skipTime(-15),
-            onSeekForward: () => skipTime(15),
-            onPreviousTrack: () => playerRef.current?.seekTo(0, true),
+            onSeekBackward: null,
+            onSeekForward: null,
+            onPreviousTrack: null,
             onNextTrack: null
           });
 
