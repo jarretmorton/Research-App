@@ -2453,7 +2453,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2947,11 +2947,16 @@
         }
       }, [currentSentenceIndex, currentSource?.id, content]);
 
-      // Track isPlaying in a ref for event handlers
+      // Track isPlaying and currentSentenceIndex in refs for use in event handlers / media session callbacks
       const isPlayingRef = useRef(false);
       useEffect(() => {
         isPlayingRef.current = isPlaying;
       }, [isPlaying]);
+
+      const currentSentenceIndexRef = useRef(0);
+      useEffect(() => {
+        currentSentenceIndexRef.current = currentSentenceIndex;
+      }, [currentSentenceIndex]);
 
       // Cancel TTS cleanly when the page is actually closed (not just backgrounded).
       // TTS continues playing when the tab is hidden — same as podcast/YouTube behavior.
@@ -3790,32 +3795,55 @@
         if (!('mediaSession' in navigator)) return;
 
         if (content && currentSource) {
-          // Set up action handlers for TTS
+          // Set up action handlers for TTS.
+          // All handlers use refs to avoid stale closure issues — this effect only
+          // re-runs when content/source changes, not on every isPlaying/index change.
           MediaSessionManager.setActionHandlers({
             onPlay: () => {
               // Chrome may have paused speechSynthesis in the background — resume it.
               if (window.speechSynthesis.paused) {
                 window.speechSynthesis.resume();
-              } else if (!isPlaying && speakFromIndexRef.current) {
-                speakFromIndexRef.current(currentSentenceIndex);
+              } else if (!isPlayingRef.current && speakFromIndexRef.current) {
+                speakFromIndexRef.current(currentSentenceIndexRef.current);
               }
             },
             onPause: () => {
-              if (isPlaying) {
-                wasCancelledRef.current = true;
-                window.speechSynthesis.cancel();
-                setIsPlaying(false);
-                releaseWakeLock();
+              wasCancelledRef.current = true;
+              window.speechSynthesis.cancel();
+              setIsPlaying(false);
+              releaseWakeLock();
+            },
+            onSeekBackward: () => {
+              // Go to previous sentence (or restart current if already at first)
+              const idx = currentSentenceIndexRef.current;
+              wasCancelledRef.current = true;
+              window.speechSynthesis.cancel();
+              const prevIdx = Math.max(0, idx - 1);
+              setCurrentSentenceIndex(prevIdx);
+              if (isPlayingRef.current && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(prevIdx), 50);
               }
             },
-            onSeekBackward: () => skipBack(),
-            onSeekForward: () => skipForward(),
+            onSeekForward: () => {
+              // Go to next sentence
+              const idx = currentSentenceIndexRef.current;
+              const maxIdx = sentencesRef.current.length - 1;
+              if (idx < maxIdx) {
+                wasCancelledRef.current = true;
+                window.speechSynthesis.cancel();
+                const nextIdx = idx + 1;
+                setCurrentSentenceIndex(nextIdx);
+                if (isPlayingRef.current && speakFromIndexRef.current) {
+                  setTimeout(() => speakFromIndexRef.current(nextIdx), 50);
+                }
+              }
+            },
             onPreviousTrack: () => {
-              // Go to beginning
+              // Jump to beginning
               wasCancelledRef.current = true;
               window.speechSynthesis.cancel();
               setCurrentSentenceIndex(0);
-              if (isPlaying && speakFromIndexRef.current) {
+              if (isPlayingRef.current && speakFromIndexRef.current) {
                 setTimeout(() => speakFromIndexRef.current(0), 50);
               }
             },
