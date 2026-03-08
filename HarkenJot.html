@@ -3713,6 +3713,7 @@
         const bestVoice = getBestVoice();
         if (bestVoice) {
           utterance.voice = bestVoice;
+          console.log('TTS voice:', bestVoice.name, bestVoice.localService ? '(local)' : '(network)');
         }
 
         utterance.onend = () => {
@@ -3741,10 +3742,23 @@
         utterance.onerror = (event) => {
           // 'interrupted' and 'canceled' fire when the user pauses/skips — not real errors
           if (event.error === 'interrupted' || event.error === 'canceled') return;
-          console.warn('SpeechSynthesis error:', event.error);
-          setIsPlaying(false);
-          releaseWakeLock();
-          showToast('Speech playback error — press play to retry.');
+          console.warn('SpeechSynthesis error:', event.error, '— retrying with local voice');
+          // Retry with a local (offline) voice — must create a NEW utterance (failed ones can't be re-spoken)
+          const localVoice = window.speechSynthesis.getVoices().find(
+            v => v.lang.startsWith('en') && v.localService
+          );
+          if (localVoice) {
+            const retry = new SpeechSynthesisUtterance(content.sentences[index]);
+            retry.rate = speed;
+            retry.voice = localVoice;
+            retry.onend = utterance.onend; // Continue the playback chain
+            retry.onerror = () => { setIsPlaying(false); releaseWakeLock(); };
+            setTimeout(() => window.speechSynthesis.speak(retry), 50);
+          } else {
+            setIsPlaying(false);
+            releaseWakeLock();
+            showToast('Speech playback error — press play to retry.');
+          }
         };
 
         utteranceRef.current = utterance;
