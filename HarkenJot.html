@@ -2437,7 +2437,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.7</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3706,11 +3706,6 @@
         setIsPlaying(true);
         requestWakeLock(); // Keep screen on during playback
         setCurrentSentenceIndex(index);
-
-        // Clear the speech queue before speaking. On mobile Chrome, stale/failed
-        // utterances in the queue cause new ones to get 'canceled' errors.
-        window.speechSynthesis.cancel();
-
         const utterance = new SpeechSynthesisUtterance(content.sentences[index]);
         utterance.rate = speed;
 
@@ -3730,8 +3725,7 @@
           const nextIndex = index + 1;
           setCurrentSentenceIndex(nextIndex);
           if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
-            // Delay gives mobile Chrome's speech engine time to reset between utterances
-            setTimeout(() => speakFromIndexRef.current(nextIndex), 50);
+            speakFromIndexRef.current(nextIndex);
           } else {
             setIsPlaying(false);
             releaseWakeLock(); // Release when playback ends
@@ -3742,28 +3736,17 @@
           }
         };
 
-        // Handle speech synthesis errors (e.g. network voice unavailable, browser policy)
+        // Handle speech synthesis errors — stop playback on real errors
         utterance.onerror = (event) => {
-          // 'interrupted' and 'canceled' are expected when user pauses/skips — not real errors
+          // 'interrupted' and 'canceled' are expected when user pauses/skips
           if (event.error === 'interrupted' || event.error === 'canceled') return;
-          console.warn('SpeechSynthesis error:', event.error, '— skipping to next sentence');
-          // Skip the failed sentence and continue with the next one.
-          // Re-speaking a failed SpeechSynthesisUtterance is unreliable in Chrome
-          // (may silently fail with no onend/onerror, halting TTS entirely).
-          const nextIndex = index + 1;
-          if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
-            setTimeout(() => speakFromIndexRef.current(nextIndex), 100);
-          } else {
-            setIsPlaying(false);
-            releaseWakeLock();
-          }
+          console.warn('SpeechSynthesis error:', event.error);
+          setIsPlaying(false);
+          releaseWakeLock();
         };
 
         utteranceRef.current = utterance;
-        // Short delay after cancel() lets the speech engine fully reset, especially on mobile
-        setTimeout(() => {
-          window.speechSynthesis.speak(utterance);
-        }, 10);
+        window.speechSynthesis.speak(utterance);
       }, [content, speed, currentSource, updateSource, showToast]);
 
       // Keep the ref updated with the latest speakFromIndex function
