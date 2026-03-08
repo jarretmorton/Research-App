@@ -2453,7 +2453,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.16.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2953,31 +2953,33 @@
         isPlayingRef.current = isPlaying;
       }, [isPlaying]);
 
-      // Pause and save when page becomes hidden (browser tab switch or app close)
+      // Cancel TTS cleanly when the page is actually closed (not just backgrounded).
+      // TTS continues playing when the tab is hidden — same as podcast/YouTube behavior.
       useEffect(() => {
-        const handleVisibilityChange = () => {
-          if (document.hidden && isPlayingRef.current) {
-            wasCancelledRef.current = true;
-            window.speechSynthesis.cancel();
-            setIsPlaying(false);
-            showToast('Playback paused - position saved');
-          }
-        };
-
         const handleBeforeUnload = () => {
           if (isPlayingRef.current) {
             window.speechSynthesis.cancel();
           }
         };
 
-        document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('beforeunload', handleBeforeUnload);
 
         return () => {
-          document.removeEventListener('visibilitychange', handleVisibilityChange);
           window.removeEventListener('beforeunload', handleBeforeUnload);
         };
-      }, [showToast]);
+      }, []);
+
+      // Chrome pauses speechSynthesis in background tabs after ~30s (known browser bug).
+      // Resume it periodically to keep TTS playing when the app is backgrounded.
+      useEffect(() => {
+        if (!isPlaying) return;
+        const keepAlive = setInterval(() => {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+        }, 10000);
+        return () => clearInterval(keepAlive);
+      }, [isPlaying]);
 
       const splitIntoSentences = (text) => {
         return text.match(/[^.!?]+[.!?]+/g) || [text];
@@ -3791,7 +3793,10 @@
           // Set up action handlers for TTS
           MediaSessionManager.setActionHandlers({
             onPlay: () => {
-              if (!isPlaying && speakFromIndexRef.current) {
+              // Chrome may have paused speechSynthesis in the background — resume it.
+              if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+              } else if (!isPlaying && speakFromIndexRef.current) {
                 speakFromIndexRef.current(currentSentenceIndex);
               }
             },
@@ -4741,23 +4746,8 @@
         }
       }, [currentTime, currentSource?.id, videoId, podcastAudio]);
 
-      // Pause and save when page becomes hidden
-      useEffect(() => {
-        const handleVisibilityChange = () => {
-          if (document.hidden && isPlaying && playerRef.current) {
-            playerRef.current.pauseVideo();
-            showToast('Playback paused - position saved');
-          }
-        };
-
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        return () => {
-          document.removeEventListener('visibilitychange', handleVisibilityChange);
-          // Note: Removed pauseVideo() from cleanup - it was causing YouTube to stop
-          // immediately after resuming because this cleanup runs on every isPlaying change
-        };
-      }, [isPlaying, showToast]);
+      // YouTube audio continues playing in background tabs natively (same as podcasts).
+      // No visibilitychange pause handler needed.
 
       // Track playing state before car mode changes (but not during recording)
       useEffect(() => {
