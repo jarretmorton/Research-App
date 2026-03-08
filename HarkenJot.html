@@ -2437,7 +2437,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6287,15 +6287,19 @@
                     {podcastAudio.showName && <span>{podcastAudio.showName}</span>}
                     <span>{formatTime(duration)}</span>
                     {podcastAudio.link && <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
-                    {(podcastAudio.link || currentSource.url) && <button type="button" title="Open in NotebookLM (copies URL)" onClick={() => { const u = podcastAudio.link || currentSource.url; navigator.clipboard.writeText(u).catch(() => {}); window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); showToast('URL copied — paste into NotebookLM to add as a source'); }}><Icons.NotebookLM /></button>}
+                    {(podcastAudio.link || currentSource.url) ? (
+                      <button type="button" title="Open in NotebookLM (copies URL)" onClick={() => { const u = podcastAudio.link || currentSource.url; navigator.clipboard.writeText(u).catch(() => {}); window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); showToast('URL copied — paste into NotebookLM to add as a source'); }}><Icons.NotebookLM /></button>
+                    ) : (currentSource?.isNotebookLM || (currentSource?.title || '').toLowerCase().includes('notebooklm')) && (
+                      <button type="button" title="Open NotebookLM" onClick={() => { window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); }}><Icons.NotebookLM /></button>
+                    )}
                   </div>
                   {currentSource?.linkedSourceId && (() => {
                     const linkedSource = sources.find(s => s.id === currentSource.linkedSourceId);
                     if (!linkedSource) return null;
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <Icons.Link />
-                        <span>Linked to</span>
+                        <Icons.NotebookLM />
+                        <span>podcast from</span>
                         <button
                           type="button"
                           onClick={() => { setCurrentSource(linkedSource); setActiveTab('reader'); }}
@@ -6797,7 +6801,7 @@
                       </div>
                       <div className="library-item-meta">
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
-                        {source.type === 'podcast' && source.showName && <span>{source.showName}</span>}
+                        {source.type === 'podcast' && (source.showName ? <span>{source.showName}</span> : (source.isNotebookLM || (source.title || '').toLowerCase().includes('notebooklm')) && <span>NotebookLM</span>)}
                         {source.type === 'youtube' && source.channelName && <span>{source.channelName}</span>}
                         {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{safeHostname(source.url)}</span>}
                         {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
