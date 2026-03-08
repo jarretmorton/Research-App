@@ -2198,7 +2198,7 @@
 
     // Main App
     function App() {
-      const [activeTab, setActiveTab] = useState('reader');
+      const [activeTab, setActiveTab] = useState('library');
       const [sources, setSources] = useState(() => {
         const saved = localStorage.getItem('harkenjot_sources');
         return saved ? JSON.parse(saved) : [];
@@ -2218,6 +2218,22 @@
       const mediaRef = useRef(null);
       const undoTimeoutRef = useRef(null);
       const storageWarningShownRef = useRef(false);
+
+      // Tab navigation with browser history support
+      const changeTab = useCallback((tab) => {
+        setActiveTab(tab);
+        history.pushState({ tab }, '');
+      }, []);
+
+      // Set initial history state and listen for back/forward button
+      useEffect(() => {
+        history.replaceState({ tab: 'library' }, '');
+        const handlePopState = (event) => {
+          setActiveTab(event.state?.tab || 'library');
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+      }, []);
 
       // Detect if user is on a mobile device
       useEffect(() => {
@@ -2365,7 +2381,7 @@
 
         if (note.timestamp !== undefined) {
           // Video note - seek to timestamp
-          setActiveTab('media');
+          changeTab('media');
           setTimeout(() => {
             if (mediaRef.current?.seekTo) {
               mediaRef.current.seekTo(note.timestamp);
@@ -2373,7 +2389,7 @@
           }, 100);
         } else if (note.position !== undefined) {
           // Article/PDF note - go to sentence
-          setActiveTab('reader');
+          changeTab('reader');
           setTimeout(() => {
             if (readerRef.current?.navigateToSentence) {
               readerRef.current.navigateToSentence(note.position);
@@ -2437,26 +2453,26 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.15.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
             <nav className="nav-tabs">
               <button
                 className={`nav-tab ${activeTab === 'reader' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('reader'); setCarMode(false); }}
+                onClick={() => { changeTab('reader'); setCarMode(false); }}
               >
                 <Icons.BookOpen /> Reader
               </button>
               <button
                 className={`nav-tab ${activeTab === 'media' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('media'); setCarMode(false); }}
+                onClick={() => { changeTab('media'); setCarMode(false); }}
               >
                 <Icons.Podcast /> Player
               </button>
               <button
                 className={`nav-tab ${activeTab === 'library' ? 'active' : ''}`}
-                onClick={() => { setActiveTab('library'); setCarMode(false); }}
+                onClick={() => { changeTab('library'); setCarMode(false); }}
               >
                 <Icons.Library /> Library
               </button>
@@ -2490,7 +2506,7 @@
 
           <main className="main-content">
             <div className="content-area">
-              {activeTab === 'reader' && (
+              <div style={{ display: activeTab === 'reader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <ReaderView
                   ref={readerRef}
                   currentSource={currentSource}
@@ -2504,8 +2520,8 @@
                   setCarMode={setCarMode}
                   isMobileDevice={isMobileDevice}
                 />
-              )}
-              {activeTab === 'media' && (
+              </div>
+              <div style={{ display: activeTab === 'media' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <MediaView
                   ref={mediaRef}
                   currentSource={currentSource}
@@ -2516,23 +2532,23 @@
                   notes={currentNotes}
                   sources={sources}
                   showToast={showToast}
-                  setActiveTab={setActiveTab}
+                  setActiveTab={changeTab}
                   carMode={carMode}
                   setCarMode={setCarMode}
                   isMobileDevice={isMobileDevice}
                 />
-              )}
-              {activeTab === 'library' && (
+              </div>
+              <div style={{ display: activeTab === 'library' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <LibraryView
                   sources={sources}
                   notes={notes}
                   setCurrentSource={(source) => {
                     setCurrentSource(source);
-                    setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                    changeTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
                   }}
                   openSourceWithNotes={(source) => {
                     setCurrentSource(source);
-                    setActiveTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                    changeTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
                     // Delay sidebar open to run after the useEffect that closes sidebar on tab change
                     setTimeout(() => setSidebarOpen(true), 0);
                   }}
@@ -2543,7 +2559,7 @@
                   setNotes={setNotes}
                   showToast={showToast}
                 />
-              )}
+              </div>
             </div>
 
             <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
