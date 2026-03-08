@@ -2437,7 +2437,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.14.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3741,20 +3741,16 @@
         utterance.onerror = (event) => {
           // 'interrupted' and 'canceled' are expected when user pauses/skips — not real errors
           if (event.error === 'interrupted' || event.error === 'canceled') return;
-          console.warn('SpeechSynthesis error:', event.error, '— retrying with local voice');
-          // Try once more with a guaranteed local (offline) voice as fallback
-          const localVoice = window.speechSynthesis.getVoices().find(
-            v => v.lang.startsWith('en') && v.localService
-          );
-          if (localVoice && utterance.voice !== localVoice) {
-            utterance.voice = localVoice;
-            window.speechSynthesis.cancel();
-            setTimeout(() => window.speechSynthesis.speak(utterance), 50);
+          console.warn('SpeechSynthesis error:', event.error, '— skipping to next sentence');
+          // Skip the failed sentence and continue with the next one.
+          // Re-speaking a failed SpeechSynthesisUtterance is unreliable in Chrome
+          // (may silently fail with no onend/onerror, halting TTS entirely).
+          const nextIndex = index + 1;
+          if (nextIndex < content.sentences.length && speakFromIndexRef.current) {
+            setTimeout(() => speakFromIndexRef.current(nextIndex), 50);
           } else {
-            // No local voice available or already tried — give up gracefully
             setIsPlaying(false);
             releaseWakeLock();
-            showToast('Text-to-speech failed. Try a different browser or check your audio settings.');
           }
         };
 
