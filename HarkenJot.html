@@ -3739,23 +3739,12 @@
 
         // Handle speech synthesis errors (e.g. network voice unavailable, browser policy)
         utterance.onerror = (event) => {
-          // 'interrupted' and 'canceled' are expected when user pauses/skips — not real errors
+          // 'interrupted' and 'canceled' fire when the user pauses/skips — not real errors
           if (event.error === 'interrupted' || event.error === 'canceled') return;
-          console.warn('SpeechSynthesis error:', event.error, '— retrying with local voice');
-          // Try once more with a guaranteed local (offline) voice as fallback
-          const localVoice = window.speechSynthesis.getVoices().find(
-            v => v.lang.startsWith('en') && v.localService
-          );
-          if (localVoice && utterance.voice !== localVoice) {
-            utterance.voice = localVoice;
-            window.speechSynthesis.cancel();
-            setTimeout(() => window.speechSynthesis.speak(utterance), 50);
-          } else {
-            // No local voice available or already tried — give up gracefully
-            setIsPlaying(false);
-            releaseWakeLock();
-            showToast('Text-to-speech failed. Try a different browser or check your audio settings.');
-          }
+          console.warn('SpeechSynthesis error:', event.error);
+          setIsPlaying(false);
+          releaseWakeLock();
+          showToast('Speech playback error — press play to retry.');
         };
 
         utteranceRef.current = utterance;
