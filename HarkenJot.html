@@ -2043,51 +2043,28 @@
       // Silent audio element for TTS media session activation
       silentAudio: null,
 
-      // Initialize silent audio for TTS (creates an inaudible audio loop to activate media session)
+      // Initialize silent audio for TTS (anchors the media session so Chrome shows
+      // the lock-screen / notification controls while TTS is playing).
       initSilentAudio: () => {
         if (MediaSessionManager.silentAudio) return MediaSessionManager.silentAudio;
 
-        // Build a proper 100ms silent WAV and embed it as a data URI.
-        // data: URIs are used instead of blob: URLs because blob: URLs can fail
-        // to load/play on some mobile browsers, especially in background tabs.
-        // The zero-duration WAV used previously caused Chrome to fire 'ended'
-        // instantly on every loop, making the media-session anchor unreliable.
-        const sampleRate = 8000;
-        const numSamples = Math.floor(sampleRate * 0.1); // 100ms = 800 samples
-        const buf = new ArrayBuffer(44 + numSamples);
-        const view = new DataView(buf);
-        const write = (off, s) => [...s].forEach((c, i) => view.setUint8(off + i, c.charCodeAt(0)));
-        write(0, 'RIFF');
-        view.setUint32(4, 36 + numSamples, true);
-        write(8, 'WAVE');
-        write(12, 'fmt ');
-        view.setUint32(16, 16, true);        // PCM chunk size
-        view.setUint16(20, 1, true);         // PCM format
-        view.setUint16(22, 1, true);         // mono
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate, true); // byteRate
-        view.setUint16(32, 1, true);         // blockAlign
-        view.setUint16(34, 8, true);         // bitsPerSample
-        write(36, 'data');
-        view.setUint32(40, numSamples, true);
-        new Uint8Array(buf).fill(0x80, 44);  // 0x80 = silence for unsigned 8-bit PCM
-
-        // Encode as data URI using btoa (avoids blob: URL loading issues)
-        let binary = '';
-        new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); });
-        const audio = new Audio('data:audio/wav;base64,' + btoa(binary));
+        // Use a zero-duration silent WAV that loops.
+        // Intentionally zero-duration: because it produces no real audio output,
+        // Android's AudioManager never registers it as an active audio stream.
+        // This means the TTS engine (speechSynthesis) can claim its own audio-focus
+        // slot without pausing this element — the two coexist without conflict.
+        // Chrome's media session still sees the element in "playing" state on each
+        // loop iteration and keeps the notification visible.
+        // A real WAV with non-zero duration DOES trigger AudioManager and gets
+        // paused the moment speechSynthesis speaks, killing the notification.
+        const audio = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=');
         audio.loop = true;
-        // Volume 1.0: the WAV samples are pure silence (0x80 = zero signal for
-        // unsigned 8-bit PCM), so there is no audible output at any volume.
-        // Using full volume gives our audio element the highest audio-focus
-        // priority so Chrome treats it as the primary media stream rather than
-        // a low-priority sound that can be silently preempted by the TTS engine.
-        audio.volume = 1.0;
+        audio.volume = 0.01; // Near-silent; must be > 0 or some browsers ignore it
         audio._intentionalPause = false;
 
-        // Auto-recover from unintentional pauses (e.g. audio-focus preemption by the
-        // speech-synthesis engine or system). A 50 ms delay prevents a rapid fight
-        // loop; if the audio was intentionally paused we skip the recovery.
+        // Auto-recover from unintentional pauses (e.g. another audio source
+        // briefly interrupting focus). An _intentionalPause flag prevents
+        // fighting against deliberate pause() calls.
         audio.addEventListener('pause', () => {
           setTimeout(() => {
             if (audio.paused && !audio._intentionalPause) {
@@ -2498,7 +2475,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.6</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.7</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
