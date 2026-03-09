@@ -2497,7 +2497,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2728,6 +2728,8 @@
       const topMatch = scoredSources[0];
       const hasSuggestion = topMatch && topMatch._score >= 0.3;
 
+      const podcastName = currentSource?.title || fileName.replace(/\.[^.]+$/, '') || 'this audio file';
+
       return (
         <div className={`modal-overlay ${show ? 'show' : ''}`} onClick={onClose}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -2738,18 +2740,22 @@
                   <button type="button" className="modal-close" onClick={onClose}>&times;</button>
                 </div>
                 <div className="modal-body" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
-                  <div style={{ marginBottom: '1.5rem' }}><Icons.NotebookLM size={64} /></div>
-                  <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>Is this audio file a NotebookLM podcast?</p>
+                  <div style={{ marginBottom: '1.25rem' }}><Icons.NotebookLM size={64} /></div>
+                  <p style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '0.4rem', wordBreak: 'break-word' }}>{podcastName}</p>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.9rem' }}>Is this a NotebookLM podcast?</p>
                   <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
-                    <button type="button" className="action-button" onClick={onClose} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>No</button>
-                    <button type="button" className="action-button" onClick={() => { onConfirmNotebookLM(); setStep('pick'); }} style={{ background: 'var(--accent)', color: 'white' }}>Yes</button>
+                    <button type="button" className="btn btn-secondary" onClick={onClose} style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>No</button>
+                    <button type="button" className="btn btn-primary" onClick={() => { onConfirmNotebookLM(); setStep('pick'); }} style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>Yes</button>
                   </div>
                 </div>
               </>
             ) : (
               <>
                 <div className="modal-header">
-                  <span className="modal-title">Link to Article</span>
+                  <div>
+                    <div className="modal-title">Link to Article</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem', wordBreak: 'break-word' }}>{podcastName}</div>
+                  </div>
                   <button type="button" className="modal-close" onClick={onClose}>&times;</button>
                 </div>
                 <div className="modal-body" style={{ padding: scoredSources.length > 0 ? '0' : '1.5rem' }}>
@@ -2791,7 +2797,7 @@
                   )}
                 </div>
                 <div className="modal-footer">
-                  <button type="button" className="action-button" onClick={onClose} style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>Skip</button>
+                  <button type="button" className="btn btn-secondary" onClick={onClose}>Skip</button>
                 </div>
               </>
             )}
