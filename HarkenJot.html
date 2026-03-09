@@ -1942,13 +1942,35 @@
         .toLowerCase()
         .split(/[\s\-_.,!?()\[\]]+/)
         .filter(t => t.length > 1 && !STOP_WORDS.has(t));
-      const fileTokens = new Set(tokenize(fileName));
-      const titleTokens = new Set(tokenize(sourceTitle));
-      if (fileTokens.size === 0 || titleTokens.size === 0) return { score: 0, reason: null };
-      let shared = 0;
-      for (const t of fileTokens) { if (titleTokens.has(t)) shared++; }
-      const score = shared / Math.max(fileTokens.size, titleTokens.size);
-      return { score, reason: shared > 0 ? 'Title match' : null };
+      const fileTokens = tokenize(fileName);
+      const titleTokens = tokenize(sourceTitle);
+      if (fileTokens.length === 0 || titleTokens.length === 0) return { score: 0, reason: null };
+
+      // Unigram Jaccard
+      const fileSet = new Set(fileTokens);
+      const titleSet = new Set(titleTokens);
+      let uniShared = 0;
+      for (const t of fileSet) { if (titleSet.has(t)) uniShared++; }
+      const uniScore = uniShared / Math.max(fileSet.size, titleSet.size);
+
+      // Bigram overlap — consecutive token pairs reward phrase matches like "data density"
+      const toBigrams = (tokens) => {
+        const bg = new Set();
+        for (let i = 0; i < tokens.length - 1; i++) bg.add(tokens[i] + '|' + tokens[i + 1]);
+        return bg;
+      };
+      const fileBigrams = toBigrams(fileTokens);
+      const titleBigrams = toBigrams(titleTokens);
+      let biShared = 0;
+      for (const bg of fileBigrams) { if (titleBigrams.has(bg)) biShared++; }
+      const biScore = (fileBigrams.size > 0 && titleBigrams.size > 0)
+        ? biShared / Math.max(fileBigrams.size, titleBigrams.size)
+        : 0;
+
+      // Equal blend: phrase matches count as much as word matches in aggregate
+      const score = uniScore * 0.5 + biScore * 0.5;
+      const reason = biShared > 0 ? 'Phrase match' : (uniShared > 0 ? 'Title match' : null);
+      return { score, reason };
     };
 
     // localStorage storage monitoring — Chrome/Edge quota is ~5MB measured in string characters
@@ -2497,7 +2519,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2720,7 +2742,7 @@
           const { score: titleScore, reason } = scoreSourceMatch(fileName, s.title);
           const ageMs = now - new Date(s.createdAt).getTime();
           const recencyScore = ageMs < SEVEN_DAYS_MS ? (1 - ageMs / SEVEN_DAYS_MS) : 0;
-          const finalScore = titleScore * 0.85 + recencyScore * 0.15;
+          const finalScore = titleScore * 0.93 + recencyScore * 0.07;
           return { ...s, _score: finalScore, _reason: reason || (recencyScore > 0.5 ? 'Recently added' : null) };
         })
         .sort((a, b) => b._score - a._score);
