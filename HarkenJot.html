@@ -2520,7 +2520,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.7</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4539,27 +4539,20 @@
                     {content.url && <span>{safeHostname(content.url)}</span>}
                     <span>{content.sentences?.length ?? 0} sentences</span>
                     {content.url && <a href={content.url} target="_blank" rel="noopener noreferrer"><Icons.Link /></a>}
-                    {(() => {
-                      const linkedPodcast = sources?.find(s => s.linkedSourceId === currentSource?.id);
-                      if (linkedPodcast) {
-                        return <span style={{ color: 'var(--text-secondary)', opacity: 0.45, display: 'inline-flex' }}><Icons.NotebookLM /></span>;
-                      }
-                      return content.url && !content.url.startsWith('blob:') ? (
+                    {!sources?.find(s => s.linkedSourceId === currentSource?.id) && (
+                      content.url && !content.url.startsWith('blob:') ? (
                         <button type="button" title="Open in NotebookLM (copies URL)" onClick={() => { navigator.clipboard.writeText(content.url).catch(() => {}); window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); showToast('URL copied — paste into NotebookLM to add as a source'); }}><Icons.NotebookLM /></button>
                       ) : (
                         <button type="button" title="Open NotebookLM" onClick={() => { window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); }}><Icons.NotebookLM /></button>
-                      );
-                    })()}
+                      )
+                    )}
                   </div>
                   {(() => {
                     const linkedPodcast = sources?.find(s => s.linkedSourceId === currentSource?.id);
                     if (!linkedPodcast) return null;
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <span style={{ opacity: 0.45, display: 'inline-flex' }}><Icons.NotebookLM /></span>
-                          <span>podcast here</span>
-                        </span>
+                        <span style={{ opacity: 0.45, display: 'inline-flex' }}><Icons.NotebookLM /></span>
                         <button
                           type="button"
                           onClick={() => { setCurrentSource(linkedPodcast); setActiveTab('media'); }}
@@ -6512,7 +6505,6 @@
                           style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
                         >
                           <Icons.NotebookLM />
-                          <span>podcast from</span>
                         </button>
                         <button
                           type="button"
