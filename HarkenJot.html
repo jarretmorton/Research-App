@@ -2520,7 +2520,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.9</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.10</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6497,19 +6497,19 @@
                     const linkedSource = sources.find(s => s.id === currentSource.linkedSourceId);
                     if (!linkedSource) return null;
                     return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', justifyContent: 'flex-start' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)', justifyContent: 'flex-start' }}>
                         <button
                           type="button"
                           title="Change linked source"
                           onClick={() => { setNotebookLMStep('pick'); setShowNotebookLMModal(true); }}
-                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}
                         >
                           <Icons.NotebookLM />
                         </button>
                         <button
                           type="button"
                           onClick={() => { setCurrentSource(linkedSource); setActiveTab('reader'); }}
-                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', textDecoration: 'underline' }}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', textDecoration: 'underline', textAlign: 'left' }}
                         >
                           {linkedSource.title}
                         </button>
