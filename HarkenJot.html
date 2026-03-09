@@ -2519,7 +2519,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2718,17 +2718,17 @@
             ...style
           }}
         >
-          {title}<span style={{ opacity: 0.4, display: 'inline-flex', verticalAlign: 'middle', marginLeft: '0.4rem', flexShrink: 0 }}><Icons.Eraser /></span>
+          {title}
         </h2>
       );
     };
 
-    const NotebookLMModal = ({ show, sources, currentSource, onConfirmNotebookLM, onLinkSource, onClose }) => {
-      const [step, setStep] = useState('ask');
+    const NotebookLMModal = ({ show, sources, currentSource, defaultStep = 'ask', onConfirmNotebookLM, onLinkSource, onClose }) => {
+      const [step, setStep] = useState(defaultStep);
 
       useEffect(() => {
-        if (show) setStep('ask');
-      }, [show]);
+        if (show) setStep(defaultStep);
+      }, [show, defaultStep]);
 
       if (!show) return null;
 
@@ -2784,7 +2784,7 @@
                   {scoredSources.length > 0 ? (
                     <>
                       {!hasSuggestion && (
-                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.6rem 1rem 0', margin: 0 }}>No suggestions — select manually</p>
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.6rem 1rem 0', margin: 0 }}>Ordered suggestions — select manually</p>
                       )}
                       <ul className="source-picker-list">
                         {scoredSources.map((source, idx) => (
@@ -4734,6 +4734,7 @@
       const [artworkFailed, setArtworkFailed] = useState(false);
       const [isLoadingArtwork, setIsLoadingArtwork] = useState(false);
       const [showNotebookLMModal, setShowNotebookLMModal] = useState(false);
+      const [notebookLMStep, setNotebookLMStep] = useState('ask');
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -5588,6 +5589,7 @@
           // Mark as already initialized so useEffect doesn't overwrite podcastAudio
           lastInitializedSourceRef.current = newSource.id;
           showToast('Audio file loaded');
+          setNotebookLMStep('ask');
           setShowNotebookLMModal(true);
         };
         input.click();
@@ -6475,8 +6477,15 @@
                     if (!linkedSource) return null;
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <Icons.NotebookLM />
-                        <span>podcast from</span>
+                        <button
+                          type="button"
+                          title="Change linked source"
+                          onClick={() => { setNotebookLMStep('pick'); setShowNotebookLMModal(true); }}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+                        >
+                          <Icons.NotebookLM />
+                          <span>podcast from</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => { setCurrentSource(linkedSource); setActiveTab('reader'); }}
@@ -6732,6 +6741,7 @@
             show={showNotebookLMModal}
             sources={sources}
             currentSource={currentSource}
+            defaultStep={notebookLMStep}
             onConfirmNotebookLM={handleConfirmNotebookLM}
             onLinkSource={handleLinkSource}
             onClose={() => setShowNotebookLMModal(false)}
