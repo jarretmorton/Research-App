@@ -2519,7 +2519,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.4</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6752,7 +6752,29 @@
 
     // Library View Component
     function LibraryView({ sources, notes, setCurrentSource, openSourceWithNotes, deleteNote, deleteSource, updateSource, setSources, setNotes, showToast }) {
-      const groupedSources = sources.reduce((acc, source) => {
+      const [searchQuery, setSearchQuery] = React.useState('');
+      const [searchOpen, setSearchOpen] = React.useState(false);
+      const searchInputRef = React.useRef(null);
+
+      const toggleSearch = () => {
+        if (searchOpen) {
+          setSearchQuery('');
+          setSearchOpen(false);
+        } else {
+          setSearchOpen(true);
+          setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 50);
+        }
+      };
+
+      const filteredSources = searchQuery.trim()
+        ? sources.filter(source => {
+            const q = searchQuery.toLowerCase();
+            if (source.title && source.title.toLowerCase().includes(q)) return true;
+            return notes.some(n => n.sourceId === source.id && n.text && n.text.toLowerCase().includes(q));
+          })
+        : sources;
+
+      const groupedSources = filteredSources.reduce((acc, source) => {
         const date = new Date(source.createdAt).toDateString();
         if (!acc[date]) acc[date] = [];
         acc[date].push(source);
@@ -6921,6 +6943,35 @@
       return (
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <div className="library-actions">
+            {searchOpen && (
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Escape' && toggleSearch()}
+                placeholder="Search titles & notes…"
+                style={{
+                  flex: '1 1 160px',
+                  minWidth: 0,
+                  padding: '0.4rem 0.6rem',
+                  border: '1px solid var(--border)',
+                  borderRadius: '6px',
+                  background: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem',
+                  outline: 'none',
+                }}
+              />
+            )}
+            <button
+              className={`btn btn-secondary${searchOpen ? ' active' : ''}`}
+              onClick={toggleSearch}
+              title={searchOpen ? 'Close search' : 'Search library'}
+              style={searchOpen ? { color: 'var(--accent)', borderColor: 'var(--accent)' } : {}}
+            >
+              <Icons.Search />
+            </button>
             <button className="btn btn-secondary" onClick={exportToOneNote}>
               <Icons.Copy /> Copy All
             </button>
@@ -6937,6 +6988,12 @@
               <div className="empty-state-icon">📚</div>
               <h3>Library Empty</h3>
               <p>Your sources and notes will appear here. Start by adding an article or podcast in the Reader or Player tabs.</p>
+            </div>
+          ) : filteredSources.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">🔍</div>
+              <h3>No results</h3>
+              <p>No sources or notes match "{searchQuery}".</p>
             </div>
           ) : (
             <div className="library-grid" style={{ flex: 1, overflow: 'auto' }}>
