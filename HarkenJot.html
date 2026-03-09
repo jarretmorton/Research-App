@@ -2475,7 +2475,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.7</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.8</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3883,8 +3883,9 @@
       // Manage silent audio for TTS media session.
       // Mirrors how podcast <audio> works: the browser derives the play/pause
       // button state from the audio element itself — play() → pause button,
-      // pause() → play button. setPlaybackState() is NOT used here because it
-      // gets overridden by the actual audio element state.
+      // setPlaybackState controls the play/pause button in the notification.
+      // The zero-duration audio must keep looping — pausing it causes Chrome
+      // to dismiss the notification entirely (duration=0, nothing to resume).
       useEffect(() => {
         if (!('mediaSession' in navigator)) return;
 
@@ -3892,14 +3893,14 @@
           const silentAudio = MediaSessionManager.initSilentAudio();
           silentAudio._intentionalPause = false;
           silentAudio.play().catch(err => console.log('Silent audio play error:', err));
+          MediaSessionManager.setPlaybackState('playing');
         } else if (content && MediaSessionManager.silentAudio) {
-          // Paused: pause (not stop) the audio element so the browser shows a
-          // play button natively, and the notification stays visible.
-          MediaSessionManager.silentAudio._intentionalPause = true;
-          MediaSessionManager.silentAudio.pause();
+          // Paused: keep the zero-duration audio looping (so the notification
+          // stays visible) and use setPlaybackState to flip the button to play.
+          // Do NOT call audio.pause() — that dismisses the notification.
           MediaSessionManager.setPlaybackState('paused');
         } else {
-          // No content: fully stop and dismiss notification
+          // No content loaded: fully stop and dismiss notification
           MediaSessionManager.stopSilentAudio();
         }
       }, [isPlaying, content]);
