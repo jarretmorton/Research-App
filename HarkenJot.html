@@ -2077,7 +2077,25 @@
         new Uint8Array(buf).forEach(b => { binary += String.fromCharCode(b); });
         const audio = new Audio('data:audio/wav;base64,' + btoa(binary));
         audio.loop = true;
-        audio.volume = 0.05; // Low but above Chrome's media-session eligibility floor
+        // Volume 1.0: the WAV samples are pure silence (0x80 = zero signal for
+        // unsigned 8-bit PCM), so there is no audible output at any volume.
+        // Using full volume gives our audio element the highest audio-focus
+        // priority so Chrome treats it as the primary media stream rather than
+        // a low-priority sound that can be silently preempted by the TTS engine.
+        audio.volume = 1.0;
+        audio._intentionalPause = false;
+
+        // Auto-recover from unintentional pauses (e.g. audio-focus preemption by the
+        // speech-synthesis engine or system). A 50 ms delay prevents a rapid fight
+        // loop; if the audio was intentionally paused we skip the recovery.
+        audio.addEventListener('pause', () => {
+          setTimeout(() => {
+            if (audio.paused && !audio._intentionalPause) {
+              audio.play().catch(() => {});
+            }
+          }, 50);
+        });
+
         MediaSessionManager.silentAudio = audio;
         return audio;
       },
@@ -2176,6 +2194,7 @@
       // Stop silent audio (for TTS cleanup)
       stopSilentAudio: () => {
         if (MediaSessionManager.silentAudio) {
+          MediaSessionManager.silentAudio._intentionalPause = true;
           MediaSessionManager.silentAudio.pause();
           MediaSessionManager.silentAudio.currentTime = 0;
         }
@@ -2479,7 +2498,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3785,17 +3804,33 @@
           }
         };
 
+        // When TTS has actually started speaking the audio-focus situation is
+        // established. (Re)playing the silent anchor here lets it coexist with
+        // the TTS engine rather than being preempted by it.
+        utterance.onstart = () => {
+          if ('mediaSession' in navigator) {
+            const anchor = MediaSessionManager.silentAudio;
+            if (anchor && anchor.paused) {
+              anchor._intentionalPause = false;
+              anchor.play().catch(() => {});
+            }
+          }
+        };
+
         utteranceRef.current = utterance;
 
-        // Play the silent audio anchor here (within the user-gesture call stack)
-        // so Chrome's autoplay policy is satisfied. The useEffect also calls
-        // play(), but that runs async after render — potentially outside the
-        // gesture window — so this call is the reliable one.
-        if ('mediaSession' in navigator) {
-          MediaSessionManager.initSilentAudio().play().catch(() => {});
-        }
-
+        // Start TTS first so the speech engine claims its audio-focus slot before
+        // we request ours. Placing speak() before play() means our audio arrives
+        // as a concurrent stream rather than a competing one that gets preempted.
         window.speechSynthesis.speak(utterance);
+
+        // Also play from the user-gesture call stack so Chrome's autoplay policy
+        // is satisfied for the initial unlock of the audio element.
+        if ('mediaSession' in navigator) {
+          const anchor = MediaSessionManager.initSilentAudio();
+          anchor._intentionalPause = false;
+          anchor.play().catch(() => {});
+        }
       }, [content, speed, currentSource, updateSource]);
 
       // Keep the ref updated with the latest speakFromIndex function
@@ -3878,10 +3913,12 @@
 
         if (isPlaying && content) {
           const silentAudio = MediaSessionManager.initSilentAudio();
+          silentAudio._intentionalPause = false;
           silentAudio.play().catch(err => console.log('Silent audio play error:', err));
         } else if (content && MediaSessionManager.silentAudio) {
           // Paused: pause (not stop) the audio element so the browser shows a
           // play button natively, and the notification stays visible.
+          MediaSessionManager.silentAudio._intentionalPause = true;
           MediaSessionManager.silentAudio.pause();
           MediaSessionManager.setPlaybackState('paused');
         } else {
