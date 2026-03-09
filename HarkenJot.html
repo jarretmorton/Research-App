@@ -2047,11 +2047,35 @@
       initSilentAudio: () => {
         if (MediaSessionManager.silentAudio) return MediaSessionManager.silentAudio;
 
-        // Create a short silent audio using a data URI (tiny silent WAV)
-        const silentWav = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-        const audio = new Audio(silentWav);
+        // Build a proper 1-second silent WAV programmatically.
+        // A zero-duration data URI (the previous approach) is not treated as a
+        // valid media-session anchor by Chrome — it fires 'ended' instantly on
+        // each loop so the browser never sees sustained audio, making
+        // setPlaybackState() and the play/pause button unreliable.
+        const sampleRate = 8000;
+        const numSamples = sampleRate; // 1 second of audio
+        const buf = new ArrayBuffer(44 + numSamples);
+        const view = new DataView(buf);
+        const write = (off, s) => [...s].forEach((c, i) => view.setUint8(off + i, c.charCodeAt(0)));
+        write(0, 'RIFF');
+        view.setUint32(4, 36 + numSamples, true);
+        write(8, 'WAVE');
+        write(12, 'fmt ');
+        view.setUint32(16, 16, true);        // PCM chunk size
+        view.setUint16(20, 1, true);         // PCM format
+        view.setUint16(22, 1, true);         // mono
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate, true); // byteRate = sampleRate × 1ch × 1B
+        view.setUint16(32, 1, true);         // blockAlign
+        view.setUint16(34, 8, true);         // bitsPerSample
+        write(36, 'data');
+        view.setUint32(40, numSamples, true);
+        new Uint8Array(buf).fill(0x80, 44);  // 0x80 = silence for unsigned 8-bit PCM
+
+        const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+        const audio = new Audio(url);
         audio.loop = true;
-        audio.volume = 0.01; // Near-silent but not zero (some browsers ignore zero)
+        audio.volume = 0.001;
         MediaSessionManager.silentAudio = audio;
         return audio;
       },
@@ -2453,7 +2477,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.4</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3848,6 +3872,7 @@
           // Paused: pause (not stop) the audio element so the browser shows a
           // play button natively, and the notification stays visible.
           MediaSessionManager.silentAudio.pause();
+          MediaSessionManager.setPlaybackState('paused');
         } else {
           // No content: fully stop and dismiss notification
           MediaSessionManager.stopSilentAudio();
@@ -3870,9 +3895,11 @@
         MediaSessionManager.setPositionState({
           duration: estimatedDuration,
           position: estimatedPosition,
-          playbackRate: speed
+          // Use 0 when paused so the browser stops interpolating the progress
+          // bar forward and doesn't override playbackState with 'playing'.
+          playbackRate: isPlaying ? speed : 0
         });
-      }, [currentSentenceIndex, content, speed]);
+      }, [currentSentenceIndex, content, speed, isPlaying]);
 
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
