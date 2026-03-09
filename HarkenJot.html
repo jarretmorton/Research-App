@@ -1929,6 +1929,28 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // Score how well an audio filename matches a source title for NotebookLM linking suggestions.
+    // Returns { score: 0–1, reason: string|null }
+    const scoreSourceMatch = (fileName, sourceTitle) => {
+      if (!fileName || !sourceTitle) return { score: 0, reason: null };
+      const STOP_WORDS = new Set(['a','an','the','of','in','on','at','to','for','and','or','but','with','by','from','as','is','are','was','were','be','been','it','its','this','that','these','those','i','my','we','our','you','your','about','into','out','up','do','so','no','not','if','can','has','had','have','will','just','also','than']);
+      const NOISE_RE = /\b(podcast|notebooklm|notebook\s*lm|audio|deep\s*dive|overview|summary|episode|part\s*\d+)\b/gi;
+      const tokenize = (str) => str
+        .replace(/\.[^.]+$/, '')          // strip file extension
+        .replace(NOISE_RE, ' ')           // remove NotebookLM boilerplate
+        .replace(/([a-z])([A-Z])/g, '$1 $2') // split camelCase
+        .toLowerCase()
+        .split(/[\s\-_.,!?()\[\]]+/)
+        .filter(t => t.length > 1 && !STOP_WORDS.has(t));
+      const fileTokens = new Set(tokenize(fileName));
+      const titleTokens = new Set(tokenize(sourceTitle));
+      if (fileTokens.size === 0 || titleTokens.size === 0) return { score: 0, reason: null };
+      let shared = 0;
+      for (const t of fileTokens) { if (titleTokens.has(t)) shared++; }
+      const score = shared / Math.max(fileTokens.size, titleTokens.size);
+      return { score, reason: shared > 0 ? 'Title match' : null };
+    };
+
     // localStorage storage monitoring — Chrome/Edge quota is ~5MB measured in string characters
     const getStorageUsageChars = () => {
       let total = 0;
@@ -2475,7 +2497,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.17.9</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2679,7 +2701,7 @@
       );
     };
 
-    const NotebookLMModal = ({ show, sources, onConfirmNotebookLM, onLinkSource, onClose }) => {
+    const NotebookLMModal = ({ show, sources, currentSource, onConfirmNotebookLM, onLinkSource, onClose }) => {
       const [step, setStep] = useState('ask');
 
       useEffect(() => {
@@ -2688,9 +2710,23 @@
 
       if (!show) return null;
 
-      const articleSources = (sources || [])
+      const fileName = currentSource?.fileName || '';
+      const now = Date.now();
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+      const scoredSources = (sources || [])
         .filter(s => s.type === 'article' || s.type === 'pdf')
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        .map(s => {
+          const { score: titleScore, reason } = scoreSourceMatch(fileName, s.title);
+          const ageMs = now - new Date(s.createdAt).getTime();
+          const recencyScore = ageMs < SEVEN_DAYS_MS ? (1 - ageMs / SEVEN_DAYS_MS) : 0;
+          const finalScore = titleScore * 0.85 + recencyScore * 0.15;
+          return { ...s, _score: finalScore, _reason: reason || (recencyScore > 0.5 ? 'Recently added' : null) };
+        })
+        .sort((a, b) => b._score - a._score);
+
+      const topMatch = scoredSources[0];
+      const hasSuggestion = topMatch && topMatch._score >= 0.3;
 
       return (
         <div className={`modal-overlay ${show ? 'show' : ''}`} onClick={onClose}>
@@ -2716,20 +2752,40 @@
                   <span className="modal-title">Link to Article</span>
                   <button type="button" className="modal-close" onClick={onClose}>&times;</button>
                 </div>
-                <div className="modal-body" style={{ padding: articleSources.length > 0 ? '0' : '1.5rem' }}>
-                  {articleSources.length > 0 ? (
-                    <ul className="source-picker-list">
-                      {articleSources.map(source => (
-                        <li key={source.id} className="source-picker-item" onClick={() => { onLinkSource(source.id); onClose(); }}>
-                          <div className="title">{source.title}</div>
-                          <div className="meta">
-                            <span className={`library-item-type ${source.type}`}>{source.type}</span>
-                            {' '}&middot;{' '}
-                            {new Date(source.createdAt).toLocaleDateString()}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                <div className="modal-body" style={{ padding: scoredSources.length > 0 ? '0' : '1.5rem' }}>
+                  {scoredSources.length > 0 ? (
+                    <>
+                      {!hasSuggestion && (
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.6rem 1rem 0', margin: 0 }}>No suggestions — select manually</p>
+                      )}
+                      <ul className="source-picker-list">
+                        {scoredSources.map((source, idx) => (
+                          <li
+                            key={source.id}
+                            className="source-picker-item"
+                            onClick={() => { onLinkSource(source.id); onClose(); }}
+                            style={hasSuggestion && idx === 0 && source._score >= 0.6 ? { borderLeft: '3px solid var(--accent)', paddingLeft: 'calc(1rem - 3px)' } : {}}
+                          >
+                            <div className="title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              {source.title}
+                              {hasSuggestion && idx === 0 && (
+                                <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'var(--accent)', color: 'white', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                  {source._score >= 0.6 ? 'Best match' : 'Suggested'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="meta">
+                              <span className={`library-item-type ${source.type}`}>{source.type}</span>
+                              {' '}&middot;{' '}
+                              {new Date(source.createdAt).toLocaleDateString()}
+                              {source._reason && idx === 0 && hasSuggestion && (
+                                <>{' '}&middot;{' '}<span style={{ color: 'var(--accent)' }}>{source._reason}</span></>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
                   ) : (
                     <p style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>No articles or PDFs in your library yet. You can link one later.</p>
                   )}
@@ -6647,6 +6703,7 @@
           <NotebookLMModal
             show={showNotebookLMModal}
             sources={sources}
+            currentSource={currentSource}
             onConfirmNotebookLM={handleConfirmNotebookLM}
             onLinkSource={handleLinkSource}
             onClose={() => setShowNotebookLMModal(false)}
