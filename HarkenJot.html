@@ -2520,7 +2520,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -7053,6 +7053,23 @@
                         {(source.type === 'podcast' || source.type === 'youtube') && <span>{source.duration ? formatTime(source.duration) : ''}</span>}
                         {(source.type === 'article' || source.type === 'pdf') && source.content && <span>{(source.content.match(/[^.!?]+[.!?]+/g) || [source.content]).length} sentences</span>}
                         {(source.url || source.link) && <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}><Icons.Link /></a>}
+                        {(() => {
+                          const linkedPodcast = sources.find(s => s.linkedSourceId === source.id);
+                          if (!linkedPodcast) return null;
+                          return (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <span style={{ color: 'var(--text-secondary)', opacity: 0.45, display: 'inline-flex' }}><Icons.NotebookLM /></span>
+                              <span>podcast here</span>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setCurrentSource(linkedPodcast); }}
+                                style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 'inherit', textDecoration: 'underline' }}
+                              >
+                                {linkedPodcast.title}
+                              </button>
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}
