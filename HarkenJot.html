@@ -2535,7 +2535,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.19.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.19.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5807,7 +5807,7 @@
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(data.html, 'text/html');
                 const pEl = doc.querySelector('blockquote p');
-                const tweetText = pEl ? pEl.textContent.replace(/\s+/g, ' ').trim() : '';
+                const tweetText = pEl ? pEl.textContent.replace(/https?:\/\/\S+/g, '').replace(/\s+/g, ' ').trim() : '';
                 videoTitle = tweetText || (author ? `@${author}` : videoTitle);
               } catch (e) {
                 videoTitle = author ? `@${author}` : videoTitle;
@@ -6486,11 +6486,8 @@
                       </div>
                     </div>
                     <div className="source-meta">
-                      <span className="library-item-type xvideo">X</span>
-                      {currentSource.channelName && (currentSource.url
-                        ? <a href={currentSource.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>@{currentSource.channelName}</a>
-                        : <span>@{currentSource.channelName}</span>)}
-                      {currentSource.url && <a href={currentSource.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: '0.8rem' }}>Open on X</a>}
+                      <span className="library-item-type xvideo">xvideo</span>
+                      {currentSource.channelName && <span>@{currentSource.channelName}</span>}
                     </div>
                   </div>
                 </div>
@@ -6509,7 +6506,7 @@
                 />
               </div>
 
-              {carMode && (
+              {!carMode && (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', alignItems: 'center' }}>
                   <div style={{ width: '200px', maxWidth: '100%', aspectRatio: '1', borderRadius: '12px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
                     <Icons.XLogo size={80} />
