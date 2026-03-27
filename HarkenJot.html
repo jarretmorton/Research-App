@@ -1247,6 +1247,7 @@
     .library-item-type.pdf { background: #fee2e2; color: #991b1b; }
     .library-item-type.youtube { background: #fce7f3; color: #9d174d; }
     .library-item-type.podcast { background: #d1fae5; color: #065f46; }
+    .library-item-type.xvideo { background: #e0e7ff; color: #3730a3; }
 
     .note-count {
       padding: 0.25rem 0.5rem;
@@ -2522,7 +2523,7 @@
           return currentSource.type === 'article' || currentSource.type === 'pdf';
         }
         if (activeTab === 'media') {
-          return currentSource.type === 'youtube' || currentSource.type === 'podcast';
+          return currentSource.type === 'youtube' || currentSource.type === 'podcast' || currentSource.type === 'xvideo';
         }
         return false;
       })();
@@ -2533,7 +2534,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.18.14</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.19.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2626,11 +2627,11 @@
                   notes={notes}
                   setCurrentSource={(source) => {
                     setCurrentSource(source);
-                    changeTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                    changeTab(source.type === 'youtube' || source.type === 'podcast' || source.type === 'xvideo' ? 'media' : 'reader');
                   }}
                   openSourceWithNotes={(source) => {
                     setCurrentSource(source);
-                    changeTab(source.type === 'youtube' || source.type === 'podcast' ? 'media' : 'reader');
+                    changeTab(source.type === 'youtube' || source.type === 'podcast' || source.type === 'xvideo' ? 'media' : 'reader');
                     // Delay sidebar open to run after the useEffect that closes sidebar on tab change
                     setTimeout(() => setSidebarOpen(true), 0);
                   }}
@@ -4768,6 +4769,7 @@
       const [isLoadingArtwork, setIsLoadingArtwork] = useState(false);
       const [showNotebookLMModal, setShowNotebookLMModal] = useState(false);
       const [notebookLMStep, setNotebookLMStep] = useState('ask');
+      const [xVideo, setXVideo] = useState(null); // { id, embedUrl, type: 'broadcast'|'tweet' }
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
@@ -4786,6 +4788,9 @@
             playerRef.current.seekTo(timestamp, true);
           } else if (audioPlayerRef.current) {
             audioPlayerRef.current.currentTime = timestamp;
+          } else if (xVideo) {
+            // X.com iframes don't support seeking; update the timer so the note timestamp aligns
+            setCurrentTime(timestamp);
           }
         }
       }));
@@ -4806,6 +4811,7 @@
 
           setVideoId(currentSource.videoId);
           setPodcastAudio(null);
+          setXVideo(null);
           setSpeed(currentSource.speed || 1);
           // Don't set URL - keep input clear after loading
           // Initialize player after state update
@@ -4840,6 +4846,7 @@
           }
 
           setVideoId(null);
+          setXVideo(null);
           setArtworkFailed(false);
           setNeedsFileRelink(false);
           setPodcastAudio({
@@ -4861,6 +4868,19 @@
               }
             }
           }, 500);
+        } else if (currentSource && currentSource.type === 'xvideo') {
+          if (lastInitializedSourceRef.current === currentSource.id) return;
+          lastInitializedSourceRef.current = currentSource.id;
+          setVideoId(null);
+          setPodcastAudio(null);
+          setIsPlaying(false);
+          setCurrentTime(0);
+          setDuration(0);
+          setXVideo({
+            id: currentSource.xVideoId,
+            embedUrl: currentSource.embedUrl,
+            type: currentSource.xVideoType || 'broadcast'
+          });
         } else {
           // Reset the ref when switching to a different type or no source
           lastInitializedSourceRef.current = null;
@@ -4914,9 +4934,9 @@
         }
       }, [speed, currentSource?.id]);
 
-      // Save position whenever it changes (for both YouTube and podcast)
+      // Save position whenever it changes (for YouTube, podcast, and X.com timer)
       useEffect(() => {
-        if (currentSource?.id && (videoId || podcastAudio) && currentTime > 0) {
+        if (currentSource?.id && (videoId || podcastAudio || xVideo) && currentTime > 0) {
           try {
             const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
             savedPositions[currentSource.id] = currentTime;
@@ -4925,7 +4945,7 @@
             console.error('Failed to save media position to localStorage:', e);
           }
         }
-      }, [currentTime, currentSource?.id, videoId, podcastAudio]);
+      }, [currentTime, currentSource?.id, videoId, podcastAudio, xVideo]);
 
       // YouTube audio continues playing in background tabs natively (same as podcasts).
       // No visibilitychange pause handler needed.
@@ -4978,40 +4998,57 @@
             album: 'HarkenJot',
             artwork: currentSource?.thumbnail || null
           });
+        } else if (xVideo) {
+          // X.com: Use timer-based controls
+          MediaSessionManager.setActionHandlers({
+            onPlay: () => { setIsPlaying(true); requestWakeLock(); },
+            onPause: () => { setIsPlaying(false); releaseWakeLock(); },
+            onSeekBackward: null,
+            onSeekForward: null,
+            onPreviousTrack: null,
+            onNextTrack: null
+          });
+
+          MediaSessionManager.setMetadata({
+            title: currentSource?.title || 'X Video',
+            artist: currentSource?.channelName || 'X',
+            album: 'HarkenJot',
+            artwork: null
+          });
         }
 
         // Cleanup handlers when unmounting or switching media
         return () => {
           MediaSessionManager.clearHandlers();
         };
-      }, [podcastAudio, videoId, currentSource]);
+      }, [podcastAudio, videoId, xVideo, currentSource]);
 
       // Update Media Session playback state when playing status changes
       useEffect(() => {
-        if (podcastAudio || videoId) {
+        if (podcastAudio || videoId || xVideo) {
           MediaSessionManager.setPlaybackState(isPlaying ? 'playing' : 'paused');
         }
-      }, [isPlaying, podcastAudio, videoId]);
+      }, [isPlaying, podcastAudio, videoId, xVideo]);
 
-      // Silent audio anchor for YouTube: the YouTube IFrame runs in a child
+      // Silent audio anchor for YouTube/X: the YouTube IFrame runs in a child
       // frame whose media session overrides our parent-frame setPlaybackState()
       // calls. Playing silent audio in the parent frame gives our media session
       // an explicit audio anchor, so the browser derives play/pause button state
       // from it natively (same mechanism as podcast <audio>).
       useEffect(() => {
-        if (!videoId || !('mediaSession' in navigator)) return;
+        if ((!videoId && !xVideo) || !('mediaSession' in navigator)) return;
         if (isPlaying) {
           const silentAudio = MediaSessionManager.initSilentAudio();
           silentAudio.play().catch(err => console.log('Silent audio play error:', err));
         } else if (MediaSessionManager.silentAudio) {
           MediaSessionManager.silentAudio.pause();
         }
-      }, [isPlaying, videoId]);
+      }, [isPlaying, videoId, xVideo]);
 
-      // Stop YouTube silent audio when switching away or unmounting
+      // Stop YouTube/X silent audio when switching away or unmounting
       useEffect(() => {
         return () => MediaSessionManager.stopSilentAudio();
-      }, [videoId]);
+      }, [videoId, xVideo]);
 
       // Update Media Session position state when time/duration changes
       useEffect(() => {
@@ -5035,9 +5072,32 @@
         }
       }, [carMode, videoId]);
 
+      // X.com timer: manually track elapsed time since we can't query iframe position
+      useEffect(() => {
+        if (!xVideo) return;
+        if (isPlaying) {
+          intervalRef.current = setInterval(() => {
+            setCurrentTime(prev => prev + 0.5);
+          }, 500);
+        } else {
+          clearInterval(intervalRef.current);
+        }
+        return () => clearInterval(intervalRef.current);
+      }, [isPlaying, xVideo]);
+
       const extractVideoId = (url) => {
         const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
         return match ? match[1] : null;
+      };
+
+      const extractXVideoInfo = (url) => {
+        // Broadcast: x.com/i/broadcasts/{id}  or  twitter.com/i/broadcasts/{id}
+        const broadcastMatch = url.match(/(?:x\.com|twitter\.com)\/i\/broadcasts\/([a-zA-Z0-9]+)/);
+        if (broadcastMatch) return { type: 'broadcast', id: broadcastMatch[1] };
+        // Tweet with video: x.com/{user}/status/{id}
+        const tweetMatch = url.match(/(?:x\.com|twitter\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/);
+        if (tweetMatch) return { type: 'tweet', id: tweetMatch[2], username: tweetMatch[1] };
+        return null;
       };
 
       // Detect URL type based on the actual URL
@@ -5068,6 +5128,10 @@
             lowerUrl.includes('audioboom.com') || lowerUrl.includes('pcdn.co') ||
             lowerUrl.includes('podcasts.apple.com') || lowerUrl.includes('podtrac.com')) {
           return 'rss';
+        }
+        // X.com / Twitter video or broadcast URLs
+        if (lowerUrl.includes('x.com') || lowerUrl.includes('twitter.com')) {
+          return 'xvideo';
         }
         return null;
       };
@@ -5414,6 +5478,7 @@
 
           // Success! Load the audio
           setVideoId(null);
+          setXVideo(null);
           setArtworkFailed(false);
           setPodcastAudio({
             audioUrl: episode.audioUrl,
@@ -5468,6 +5533,7 @@
           const showName = episode.channelTitle || 'Podcast';
 
           setVideoId(null);
+          setXVideo(null);
           setArtworkFailed(false);
           setPodcastAudio({
             audioUrl: episode.audioUrl,
@@ -5608,6 +5674,7 @@
           const blobUrl = await processLocalAudioFile(file);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
+          setXVideo(null);
           setArtworkFailed(false);
           setPodcastAudio({ audioUrl: blobUrl, title, showName: '', artworkUrl: '', link: '' });
           activeBlobUrlsRef.current.add(blobUrl);
@@ -5657,6 +5724,7 @@
 
           setVideoId(id);
           setPodcastAudio(null);
+          setXVideo(null);
 
           // Fetch YouTube title and channel via oEmbed API
           let videoTitle = 'YouTube Video';
@@ -5698,6 +5766,7 @@
         } else if (urlType === 'audio') {
           // Direct audio URL
           setVideoId(null);
+          setXVideo(null);
           setArtworkFailed(false);
           setPodcastAudio({
             audioUrl: url,
@@ -5712,6 +5781,51 @@
           });
           setUrl(''); // Clear URL after successful load
           showToast('Audio loaded');
+        } else if (urlType === 'xvideo') {
+          const info = extractXVideoInfo(url);
+          if (!info) {
+            showToast('Invalid X.com URL — paste a tweet or broadcast link');
+            return;
+          }
+
+          const embedUrl = info.type === 'broadcast'
+            ? `https://broadcast.twitter.com/live/${info.id}/embed`
+            : `https://platform.twitter.com/embed/Tweet.html?id=${info.id}&dnt=true`;
+
+          // Fetch oEmbed metadata (works for tweets; may not work for broadcasts)
+          let videoTitle = info.type === 'broadcast' ? 'X Broadcast' : 'X Video';
+          let author = '';
+          try {
+            const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(url)}&omit_script=true`;
+            const response = await fetch(oembedUrl);
+            if (response.ok) {
+              const data = await response.json();
+              author = data.author_name || '';
+              videoTitle = author || videoTitle;
+            }
+          } catch (err) {
+            console.log('Could not fetch X.com oEmbed metadata:', err);
+          }
+
+          setVideoId(null);
+          setPodcastAudio(null);
+          setIsPlaying(false);
+          setCurrentTime(0);
+          setDuration(0);
+          setXVideo({ id: info.id, embedUrl, type: info.type });
+
+          addSource({
+            type: 'xvideo',
+            title: videoTitle,
+            url: url,
+            xVideoId: info.id,
+            xVideoType: info.type,
+            embedUrl: embedUrl,
+            channelName: author
+          });
+
+          setUrl('');
+          showToast('X video loaded — tap Play to start timer for timestamped notes');
         } else {
           // Unknown URL type - try loading as RSS feed before giving up
           try {
@@ -5886,6 +6000,13 @@
       };
 
       const togglePlayback = () => {
+        if (xVideo) {
+          const newPlaying = !isPlaying;
+          setIsPlaying(newPlaying);
+          if (newPlaying) requestWakeLock();
+          else releaseWakeLock();
+          return;
+        }
         if (!playerRef.current) return;
 
         if (isPlaying) {
@@ -5896,6 +6017,10 @@
       };
 
       const skipTime = (seconds) => {
+        if (xVideo) {
+          setCurrentTime(prev => Math.max(0, prev + seconds));
+          return;
+        }
         if (!playerRef.current) return;
         const wasPlaying = isPlaying;
         const newTime = Math.max(0, Math.min(duration, currentTime + seconds));
@@ -6331,7 +6456,146 @@
             </div>
           </div>
 
-          {videoId ? (
+          {xVideo ? (
+            <div className="media-container">
+              {currentSource && (
+                <div className="reader-header">
+                  <div className="source-info" style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem' }}>
+                      <EditableTitle
+                        title={currentSource.title || 'X Video'}
+                        onSave={(newTitle) => updateSource(currentSource.id, { title: newTitle })}
+                      />
+                      <div
+                        className={`read-status clickable ${currentSource.isRead ? 'checked' : ''}`}
+                        onClick={() => updateSource(currentSource.id, { isRead: !currentSource.isRead })}
+                        title={currentSource.isRead ? 'Mark as unread' : 'Mark as read'}
+                        style={{ marginTop: '0.25rem' }}
+                      >
+                        {currentSource.isRead && <Icons.Check />}
+                      </div>
+                    </div>
+                    <div className="source-meta">
+                      <span className="library-item-type xvideo">X</span>
+                      {currentSource.channelName && (currentSource.url
+                        ? <a href={currentSource.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>@{currentSource.channelName}</a>
+                        : <span>@{currentSource.channelName}</span>)}
+                      {currentSource.url && <a href={currentSource.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: '0.8rem' }}>Open on X</a>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="youtube-container" style={carMode ? { position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' } : {}}>
+                <iframe
+                  key={xVideo.embedUrl}
+                  src={xVideo.embedUrl}
+                  style={{ width: '100%', border: 'none', borderRadius: '8px' }}
+                  height="450"
+                  allowFullScreen
+                  allow="autoplay; fullscreen"
+                  scrolling="no"
+                  title="X Video"
+                />
+              </div>
+
+              <div style={{ padding: '0.25rem 1rem', fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                Timer: {formatTime(currentTime)} — {isPlaying ? 'Running' : 'Paused'} · Tap Play below, then start the video — notes will use the timer as timestamp
+              </div>
+
+              {showTextNote && (
+                <div className="text-note-container">
+                  <input
+                    type="text"
+                    className="url-input text-note-input"
+                    placeholder="Type your note..."
+                    value={textNote}
+                    onChange={(e) => setTextNote(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && saveTextNote()}
+                    autoFocus
+                  />
+                  <div className="text-note-buttons">
+                    <button className="btn btn-primary" onClick={saveTextNote}>Save</button>
+                    <button className="btn btn-secondary" onClick={cancelTextNote}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              <div className={`playback-bar ${carMode ? 'car-mode' : ''}`}>
+                <div className="playback-controls">
+                  <div className="transport-buttons">
+                    <button
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
+                      onClick={() => skipTime(-15)}
+                      title="Back 15 seconds (timer)"
+                    >
+                      <Icons.Rewind />
+                      <span style={{ fontSize: '0.65rem', marginLeft: '2px' }}>15</span>
+                    </button>
+                    <button className={`play-btn ${carMode ? 'car-mode' : ''}`} onClick={togglePlayback}>
+                      {isPlaying ? <Icons.Pause /> : <Icons.Play />}
+                    </button>
+                    <button
+                      className={`skip-btn ${carMode ? 'car-mode' : ''}`}
+                      onClick={() => skipTime(15)}
+                      title="Forward 15 seconds (timer)"
+                    >
+                      <span style={{ fontSize: '0.65rem', marginRight: '2px' }}>15</span>
+                      <Icons.FastForward />
+                    </button>
+                  </div>
+
+                  <div className={`progress-speed-group ${carMode ? 'car-mode' : ''}`}>
+                    <div className="progress-container">
+                      <div className={`progress-bar ${carMode ? 'car-mode' : ''}`}>
+                        <div className="progress-fill" style={{ width: '0%' }} />
+                      </div>
+                      <div className="progress-text">
+                        <span>{formatTime(currentTime)}</span>
+                        <span>Timer</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="note-controls">
+                  <button
+                    className={`note-btn ${isProcessing ? 'processing' : ''} ${carMode ? 'car-mode' : ''}`}
+                    onClick={handleVoiceButtonClick}
+                    disabled={!speechReady || whisperLoading}
+                    title={!speechReady ? 'Speech recognition not supported' : (useWhisperFallback ? 'Using offline mode' : '')}
+                  >
+                    {isRecording ? '⏹ Stop' :
+                     whisperLoading ? `Loading ${whisperProgress}%` :
+                     isTranscribing ? 'Processing...' :
+                     <><Icons.Mic /> Voice{useWhisperFallback ? ' (offline)' : ''}</>}
+                  </button>
+                  <button
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
+                    onClick={openTextNote}
+                  >
+                    <Icons.Keyboard /> Type
+                  </button>
+                  <button
+                    className={`note-btn ${carMode ? 'car-mode' : ''}`}
+                    onClick={() => { setCurrentTime(0); setIsPlaying(false); }}
+                    title="Reset timer to 0:00"
+                  >
+                    ↺ Reset
+                  </button>
+                  {isMobileDevice && (
+                    <button
+                      className={`note-btn ${carMode ? 'car-mode active' : ''}`}
+                      onClick={() => setCarMode(!carMode)}
+                      title="Car Mode"
+                    >
+                      <Icons.Car />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : videoId ? (
             <div className="media-container">
               {currentSource && (
                 <div className="reader-header">
@@ -6764,7 +7028,7 @@
             <div className="empty-state">
               <div className="empty-state-icon">🎙️</div>
               <h3>Media Player</h3>
-              <p>Paste a YouTube, Spotify, or podcast RSS feed link above or load a audio file to begin. The app will play it and let you take notes while you listen.</p>
+              <p>Paste a YouTube, X.com, Spotify, or podcast RSS feed link above, or load a local audio file to begin. The app will play it and let you take notes while you listen.</p>
             </div>
           )}
           <NotebookLMModal
@@ -7078,7 +7342,8 @@
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
                         {source.type === 'podcast' && (source.showName ? ((source.link || source.url) ? <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.showName}</a> : <span className="library-item-meta-name">{source.showName}</span>) : (source.isNotebookLM || (source.title || '').toLowerCase().includes('notebooklm')) && <a href="https://notebooklm.google.com/" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>NotebookLM</a>)}
                         {source.type === 'youtube' && source.channelName && (source.url ? <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.channelName}</a> : <span className="library-item-meta-name">{source.channelName}</span>)}
-                        {source.type !== 'podcast' && source.type !== 'youtube' && source.url && <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{safeHostname(source.url)}</a>}
+                        {source.type === 'xvideo' && source.channelName && (source.url ? <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>@{source.channelName}</a> : <span className="library-item-meta-name">@{source.channelName}</span>)}
+                        {source.type !== 'podcast' && source.type !== 'youtube' && source.type !== 'xvideo' && source.url && <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{safeHostname(source.url)}</a>}
                         {(source.type === 'podcast' || source.type === 'youtube') && <span style={{ flexShrink: 0 }}>{source.duration ? formatTime(source.duration) : ''}</span>}
                         {(source.type === 'article' || source.type === 'pdf') && source.content && <span style={{ flexShrink: 0 }}>{(source.content.match(/[^.!?]+[.!?]+/g) || [source.content]).length} sentences</span>}
                       </div>
