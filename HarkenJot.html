@@ -2535,7 +2535,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.19.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.20.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2741,12 +2741,20 @@
       );
     };
 
-    const NotebookLMModal = ({ show, sources, currentSource, defaultStep = 'ask', onConfirmNotebookLM, onLinkSource, onClose }) => {
+    const NotebookLMModal = ({ show, sources, currentSource, defaultStep = 'ask', onConfirmNotebookLM, onSaveUrl, onLinkSource, onClose }) => {
       const [step, setStep] = useState(defaultStep);
+      const [urlInput, setUrlInput] = useState('');
+      const [urlError, setUrlError] = useState('');
+
+      const NOTEBOOK_URL_RE = /^https:\/\/notebooklm\.google\.com\/notebook\/[\w-]+/i;
 
       useEffect(() => {
-        if (show) setStep(defaultStep);
-      }, [show, defaultStep]);
+        if (show) {
+          setStep(defaultStep);
+          setUrlInput(currentSource?.notebookLMUrl || '');
+          setUrlError('');
+        }
+      }, [show, defaultStep, currentSource?.id]);
 
       if (!show) return null;
 
@@ -2770,6 +2778,22 @@
 
       const podcastName = currentSource?.title || fileName.replace(/\.[^.]+$/, '') || 'this audio file';
 
+      const handleSaveUrl = () => {
+        const trimmed = urlInput.trim();
+        if (!trimmed) {
+          setUrlError('');
+          setStep('pick');
+          return;
+        }
+        if (!NOTEBOOK_URL_RE.test(trimmed)) {
+          setUrlError('Must be a https://notebooklm.google.com/notebook/… URL');
+          return;
+        }
+        setUrlError('');
+        onSaveUrl && onSaveUrl(trimmed);
+        setStep('pick');
+      };
+
       return (
         <div className={`modal-overlay ${show ? 'show' : ''}`} onClick={onClose}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -2785,8 +2809,37 @@
                   <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.9rem' }}>Is this a NotebookLM podcast?</p>
                   <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
                     <button type="button" className="btn btn-secondary" onClick={onClose} style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>No</button>
-                    <button type="button" className="btn btn-primary" onClick={() => { onConfirmNotebookLM(); setStep('pick'); }} style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>Yes</button>
+                    <button type="button" className="btn btn-primary" onClick={() => { onConfirmNotebookLM(); setStep('url'); }} style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>Yes</button>
                   </div>
+                </div>
+              </>
+            ) : step === 'url' ? (
+              <>
+                <div className="modal-header">
+                  <div>
+                    <div className="modal-title">NotebookLM source URL</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem', wordBreak: 'break-word' }}>{podcastName}</div>
+                  </div>
+                  <button type="button" className="modal-close" onClick={onClose}>&times;</button>
+                </div>
+                <div className="modal-body" style={{ padding: '1.5rem' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: 0, marginBottom: '0.75rem' }}>Paste the notebook URL to link this audio back to its NotebookLM source (optional).</p>
+                  <input
+                    type="url"
+                    value={urlInput}
+                    onChange={(e) => { setUrlInput(e.target.value); if (urlError) setUrlError(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveUrl(); }}
+                    placeholder="https://notebooklm.google.com/notebook/…"
+                    autoFocus
+                    style={{ width: '100%', padding: '0.6rem 0.75rem', border: `1px solid ${urlError ? 'var(--danger, #c00)' : 'var(--border)'}`, borderRadius: '6px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  {urlError && (
+                    <div style={{ color: 'var(--danger, #c00)', fontSize: '0.8rem', marginTop: '0.4rem' }}>{urlError}</div>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => { setUrlError(''); setStep('pick'); }}>Skip</button>
+                  <button type="button" className="btn btn-primary" onClick={handleSaveUrl}>Save &amp; Continue</button>
                 </div>
               </>
             ) : (
@@ -5658,6 +5711,13 @@
         }
       };
 
+      const handleSaveNotebookLMUrl = (notebookLMUrl) => {
+        if (currentSource && notebookLMUrl) {
+          updateSource(currentSource.id, { notebookLMUrl });
+          showToast('NotebookLM link saved');
+        }
+      };
+
       const handleLinkSource = (linkedSourceId) => {
         if (currentSource) {
           updateSource(currentSource.id, { linkedSourceId });
@@ -6773,9 +6833,11 @@
                   </div>
                   <div className="source-meta">
                     <span className="library-item-type podcast">Podcast</span>
-                    {podcastAudio.showName ? (podcastAudio.link ? <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{podcastAudio.showName}</a> : <span>{podcastAudio.showName}</span>) : (currentSource?.isNotebookLM || (currentSource?.title || '').toLowerCase().includes('notebooklm')) ? <a href="https://notebooklm.google.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>NotebookLM</a> : null}
+                    {podcastAudio.showName ? (podcastAudio.link ? <a href={podcastAudio.link} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{podcastAudio.showName}</a> : <span>{podcastAudio.showName}</span>) : (currentSource?.isNotebookLM || (currentSource?.title || '').toLowerCase().includes('notebooklm')) ? <a href={currentSource?.notebookLMUrl || 'https://notebooklm.google.com/'} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', textDecoration: 'none' }}>NotebookLM</a> : null}
                     <span>{formatTime(duration)}</span>
-                    {(podcastAudio.link || currentSource?.url) ? (
+                    {currentSource?.notebookLMUrl ? (
+                      <button type="button" title="Open source notebook in NotebookLM" onClick={() => { window.open(currentSource.notebookLMUrl, '_blank', 'noopener noreferrer'); }}><Icons.NotebookLM /></button>
+                    ) : (podcastAudio.link || currentSource?.url) ? (
                       <button type="button" title="Open in NotebookLM (copies URL)" onClick={() => { const u = podcastAudio.link || currentSource?.url; navigator.clipboard.writeText(u).catch(() => {}); window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); showToast('URL copied — paste into NotebookLM to add as a source'); }}><Icons.NotebookLM /></button>
                     ) : !(currentSource?.isNotebookLM || (currentSource?.title || '').toLowerCase().includes('notebooklm')) ? (
                       <button type="button" title="Open NotebookLM" onClick={() => { window.open('https://notebooklm.google.com/', '_blank', 'noopener noreferrer'); }}><Icons.NotebookLM /></button>
@@ -6861,21 +6923,41 @@
                 return (
                 <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', alignItems: 'center' }}>
                   {isNotebookLM ? (
-                    <div
-                      style={{
-                        width: '200px',
-                        maxWidth: '100%',
-                        aspectRatio: '1',
-                        borderRadius: '12px',
-                        background: 'var(--bg-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--text-primary)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                      }}
-                    >
-                      <Icons.NotebookLM size={120} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', maxWidth: '100%' }}>
+                      <div
+                        style={{
+                          width: '200px',
+                          maxWidth: '100%',
+                          aspectRatio: '1',
+                          borderRadius: '12px',
+                          background: 'var(--bg-secondary)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-primary)',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        }}
+                      >
+                        <Icons.NotebookLM size={120} />
+                      </div>
+                      {currentSource?.notebookLMUrl ? (
+                        <a
+                          href={currentSource.notebookLMUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: '0.85rem', color: 'var(--accent)', textDecoration: 'none' }}
+                        >
+                          Open in NotebookLM ↗
+                        </a>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setNotebookLMStep('url'); setShowNotebookLMModal(true); }}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: '0.85rem', textDecoration: 'underline' }}
+                        >
+                          Add NotebookLM link
+                        </button>
+                      )}
                     </div>
                   ) : (!podcastAudio.artworkUrl || artworkFailed) ? (
                     <button
@@ -7051,6 +7133,7 @@
             currentSource={currentSource}
             defaultStep={notebookLMStep}
             onConfirmNotebookLM={handleConfirmNotebookLM}
+            onSaveUrl={handleSaveNotebookLMUrl}
             onLinkSource={handleLinkSource}
             onClose={() => setShowNotebookLMModal(false)}
           />
@@ -7354,7 +7437,7 @@
                       </div>
                       <div className="library-item-meta">
                         <span className={`library-item-type ${source.type}`}>{source.type}</span>
-                        {source.type === 'podcast' && (source.showName ? ((source.link || source.url) ? <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.showName}</a> : <span className="library-item-meta-name">{source.showName}</span>) : (source.isNotebookLM || (source.title || '').toLowerCase().includes('notebooklm')) && <a href="https://notebooklm.google.com/" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>NotebookLM</a>)}
+                        {source.type === 'podcast' && (source.showName ? ((source.link || source.url) ? <a href={source.link || source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.showName}</a> : <span className="library-item-meta-name">{source.showName}</span>) : (source.isNotebookLM || (source.title || '').toLowerCase().includes('notebooklm')) && <a href={source.notebookLMUrl || 'https://notebooklm.google.com/'} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.notebookLMUrl ? 'NotebookLM ↗' : 'NotebookLM'}</a>)}
                         {source.type === 'youtube' && source.channelName && (source.url ? <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{source.channelName}</a> : <span className="library-item-meta-name">{source.channelName}</span>)}
                         {source.type === 'xvideo' && source.channelName && (source.url ? <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>@{source.channelName}</a> : <span className="library-item-meta-name">@{source.channelName}</span>)}
                         {source.type !== 'podcast' && source.type !== 'youtube' && source.type !== 'xvideo' && source.url && <a href={source.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="library-item-meta-name" style={{ color: 'var(--accent)', textDecoration: 'none' }}>{safeHostname(source.url)}</a>}
