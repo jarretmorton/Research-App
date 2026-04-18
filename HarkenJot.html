@@ -1945,6 +1945,32 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
+    // Trigger phrases that, when present at the start of a note, cause the full
+    // source sentence to be captured in the note's context (instead of the
+    // default truncated preview). Matched case-insensitively with word-boundary.
+    const NOTE_TRIGGER_PHRASES = [
+      'quote this', 'quote that',
+      'capture this', 'capture that'
+    ];
+    const detectNoteTrigger = (text) => {
+      if (!text) return { triggered: false, cleanedText: '' };
+      const trimmed = text.trim();
+      const lower = trimmed.toLowerCase();
+      for (const phrase of NOTE_TRIGGER_PHRASES) {
+        if (lower.startsWith(phrase)) {
+          const nextChar = lower.charAt(phrase.length);
+          if (nextChar === '' || !/[a-z0-9]/i.test(nextChar)) {
+            const cleanedText = trimmed
+              .slice(phrase.length)
+              .replace(/^[\s,.:;!?\-–—]+/, '')
+              .trim();
+            return { triggered: true, cleanedText };
+          }
+        }
+      }
+      return { triggered: false, cleanedText: trimmed };
+    };
+
     // Score how well an audio filename matches a source title for NotebookLM linking suggestions.
     // Returns { score: 0–1, reason: string|null }
     const scoreSourceMatch = (fileName, sourceTitle) => {
@@ -2535,7 +2561,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.20.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.21.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4276,15 +4302,21 @@
               const transcript = await window.WhisperASR.transcribe(audioBlob);
               if (transcript && transcript.trim()) {
                 const sentence = sentencesRef.current[notePosition];
+                const trig = detectNoteTrigger(transcript);
+                const noteText = trig.triggered ? trig.cleanedText : transcript.trim();
+                const context = trig.triggered && sentence
+                  ? sentence
+                  : (sentence?.substring(0, 100) + '...');
                 addNote({
                   sourceId: currentSource?.id,
-                  text: transcript.trim(),
+                  text: noteText,
                   position: notePosition,
-                  context: sentence?.substring(0, 100) + '...',
-                  type: 'voice'
+                  context,
+                  type: 'voice',
+                  fullSentenceCaptured: !!(trig.triggered && sentence)
                 });
                 playSound('success');
-                showToast('Note saved!');
+                showToast(trig.triggered && sentence ? 'Full sentence captured' : 'Note saved!');
               } else {
                 playSound('error');
                 showToast('No speech detected - try speaking louder');
@@ -4401,15 +4433,21 @@
               console.log('Skipping onend message - error already handled');
             } else if (finalTranscript.trim()) {
               const sentence = sentencesRef.current[notePosition];
+              const trig = detectNoteTrigger(finalTranscript);
+              const noteText = trig.triggered ? trig.cleanedText : finalTranscript.trim();
+              const context = trig.triggered && sentence
+                ? sentence
+                : (sentence?.substring(0, 100) + '...');
               addNote({
                 sourceId: currentSource?.id,
-                text: finalTranscript.trim(),
+                text: noteText,
                 position: notePosition,
-                context: sentence?.substring(0, 100) + '...',
-                type: 'voice'
+                context,
+                type: 'voice',
+                fullSentenceCaptured: !!(trig.triggered && sentence)
               });
               playSound('success');
-              showToast('Note saved!');
+              showToast(trig.triggered && sentence ? 'Full sentence captured' : 'Note saved!');
             } else if (hasResult) {
               playSound('error');
               showToast('No speech detected - try again');
@@ -4476,13 +4514,20 @@
       const saveTextNote = () => {
         if (textNote.trim()) {
           const sentence = sentencesRef.current[currentSentenceIndex];
+          const trig = detectNoteTrigger(textNote);
+          const noteText = trig.triggered ? trig.cleanedText : textNote.trim();
+          const context = trig.triggered && sentence
+            ? sentence
+            : (sentence?.substring(0, 100) + '...');
           addNote({
             sourceId: currentSource?.id,
-            text: textNote.trim(),
+            text: noteText,
             position: currentSentenceIndex,
-            context: sentence?.substring(0, 100) + '...',
-            type: 'text'
+            context,
+            type: 'text',
+            fullSentenceCaptured: !!(trig.triggered && sentence)
           });
+          if (trig.triggered && sentence) showToast('Full sentence captured');
           setTextNote('');
           setShowTextNote(false);
         }
@@ -4630,13 +4675,13 @@
                   ))}
                 </div>
               </div>
-              
+
               {showTextNote && (
                 <div className="text-note-container">
                   <input
                     type="text"
                     className="url-input text-note-input"
-                    placeholder="Type your note..."
+                    placeholder={'Type your note… (start with “quote this” to capture the full sentence)'}
                     value={textNote}
                     onChange={(e) => setTextNote(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && saveTextNote()}
