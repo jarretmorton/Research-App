@@ -2535,7 +2535,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.20.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.20.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2590,6 +2590,7 @@
             <div className="content-area">
               <div style={{ display: activeTab === 'reader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <ReaderView
+                  key={currentSource?.id ?? 'none'}
                   ref={readerRef}
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
@@ -2607,6 +2608,7 @@
               </div>
               <div style={{ display: activeTab === 'media' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 <MediaView
+                  key={currentSource?.id ?? 'none'}
                   ref={mediaRef}
                   currentSource={currentSource}
                   setCurrentSource={setCurrentSource}
@@ -3457,18 +3459,13 @@
         const sentences = splitIntoSentences(fullText);
         sentencesRef.current = sentences;
 
-        const newSource = addSource({
+        addSource({
           type: 'pdf',
           title: pdfTitle,
           url: pdfUrl,
           content: fullText
         });
 
-        setContent({
-          title: newSource.title,
-          sentences: sentences,
-          url: pdfUrl
-        });
         setUrl('');
         showToast('PDF loaded successfully!');
         setLoading(false);
@@ -3507,8 +3504,7 @@
               const title = file.name.replace(/\.docx?$/i, '').replace(/[_-]/g, ' ');
               const sentences = splitIntoSentences(fullText);
               sentencesRef.current = sentences;
-              const newSource = addSource({ type: 'article', title, url: '', content: fullText, sentences });
-              setContent({ title: newSource.title, sentences, url: '' });
+              addSource({ type: 'article', title, url: '', content: fullText, sentences });
               setUrl('');
               showToast('Document loaded!');
             }
@@ -3665,8 +3661,7 @@
                       const { text } = extracted;
                       const sentences = splitIntoSentences(text);
                       sentencesRef.current = sentences;
-                      const newSource = addSource({ type: 'article', title, url, content: text });
-                      setContent({ title: newSource.title, sentences, url });
+                      addSource({ type: 'article', title, url, content: text });
                       setUrl('');
                       showToast('Article loaded successfully!');
                       setLoading(false);
@@ -3766,17 +3761,11 @@
           const sentences = splitIntoSentences(text);
           sentencesRef.current = sentences;
 
-          const newSource = addSource({
+          addSource({
             type: 'article',
             title: title,
             url: url,
             content: text
-          });
-
-          setContent({
-            title: newSource.title,
-            sentences: sentences,
-            url: url
           });
 
           setUrl(''); // Clear URL after successful load
@@ -3797,17 +3786,11 @@
         const sentences = splitIntoSentences(manualContent);
         sentencesRef.current = sentences;
         
-        const newSource = addSource({
+        addSource({
           type: 'article',
           title: url || 'Pasted Content',
           url: url || null,
           content: manualContent
-        });
-        
-        setContent({
-          title: newSource.title,
-          sentences: sentences,
-          url: url
         });
 
         setUrl(''); // Clear URL after successful load
