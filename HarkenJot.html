@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.21.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.21.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6610,22 +6610,13 @@
                 <iframe
                   key={xVideo.embedUrl}
                   src={xVideo.embedUrl}
-                  style={{ width: '100%', border: 'none', borderRadius: '8px' }}
-                  height="450"
+                  style={{ width: '100%', height: '100%', border: 'none' }}
                   allowFullScreen
                   allow="autoplay; fullscreen"
                   scrolling="no"
                   title="X Video"
                 />
               </div>
-
-              {!carMode && (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', flex: '1 1 auto', minHeight: 0, overflow: 'hidden', alignItems: 'center' }}>
-                  <div style={{ width: '200px', maxWidth: '100%', aspectRatio: '1', borderRadius: '12px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                    <Icons.XLogo size={80} />
-                  </div>
-                </div>
-              )}
 
               {showTextNote && (
                 <div className="text-note-container">
