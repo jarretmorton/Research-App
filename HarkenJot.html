@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5222,20 +5222,45 @@
 
       // Fetch the direct MP4 URL for a tweet via Twitter's syndication endpoint
       // (the same one their embed widget uses internally). Returns null if the
-      // tweet has no video or the request fails.
+      // tweet has no video or the request fails. The endpoint doesn't always
+      // send permissive CORS headers, so we fall back through CORS proxies.
       const fetchXTweetVideoUrl = async (tweetId) => {
         try {
           const token = ((Number(tweetId) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
           const endpoint = `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=${token}&lang=en`;
-          const response = await fetch(endpoint);
-          if (!response.ok) return null;
-          const data = await response.json();
-          const media = (data?.mediaDetails || []).find(m => m?.video_info?.variants);
-          if (!media) return null;
-          const mp4 = media.video_info.variants
-            .filter(v => v.content_type === 'video/mp4' && v.bitrate)
-            .sort((a, b) => b.bitrate - a.bitrate)[0];
-          return mp4?.url || null;
+          const transports = [
+            (u) => u,
+            (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+            (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+            (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+          ];
+          let data = null;
+          for (const wrap of transports) {
+            try {
+              const response = await fetch(wrap(endpoint));
+              if (!response.ok) continue;
+              data = await response.json();
+              if (data) break;
+            } catch (err) {
+              // try next transport
+            }
+          }
+          if (!data) {
+            console.log('X syndication fetch failed for tweet', tweetId);
+            return null;
+          }
+          // Video may live on the tweet itself, on a quoted tweet, or on a card
+          const candidates = [data, data.quoted_tweet].filter(Boolean);
+          for (const candidate of candidates) {
+            const media = (candidate.mediaDetails || []).find(m => m?.video_info?.variants);
+            if (!media) continue;
+            const mp4 = media.video_info.variants
+              .filter(v => v.content_type === 'video/mp4' && v.bitrate)
+              .sort((a, b) => b.bitrate - a.bitrate)[0];
+            if (mp4?.url) return mp4.url;
+          }
+          console.log('X syndication: no video variants found for tweet', tweetId, data);
+          return null;
         } catch (err) {
           console.log('Could not fetch X.com video URL:', err);
           return null;
