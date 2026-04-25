@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.21.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4869,6 +4869,7 @@
 
       const playerRef = useRef(null);
       const audioPlayerRef = useRef(null); // HTML5 audio element for podcasts
+      const videoPlayerRef = useRef(null); // HTML5 video element for X.com tweet videos
       const activeBlobUrlsRef = useRef(new Set()); // Blob URLs created this session (valid for re-link detection)
       const mediaRecorderRef = useRef(null);
       const streamRef = useRef(null);
@@ -4882,10 +4883,12 @@
         seekTo: (timestamp) => {
           if (playerRef.current) {
             playerRef.current.seekTo(timestamp, true);
+          } else if (videoPlayerRef.current) {
+            videoPlayerRef.current.currentTime = timestamp;
           } else if (audioPlayerRef.current) {
             audioPlayerRef.current.currentTime = timestamp;
           } else if (xVideo) {
-            // X.com iframes don't support seeking; update the timer so the note timestamp aligns
+            // Iframe fallback (broadcasts) can't be seeked; update the timer so the note timestamp aligns
             setCurrentTime(timestamp);
           }
         }
@@ -4975,8 +4978,18 @@
           setXVideo({
             id: currentSource.xVideoId,
             embedUrl: currentSource.embedUrl,
-            type: currentSource.xVideoType || 'broadcast'
+            type: currentSource.xVideoType || 'broadcast',
+            mp4Url: null
           });
+          // Re-fetch MP4 URL for tweets (twimg URLs are signed and may rotate)
+          if (currentSource.xVideoType === 'tweet' && currentSource.xVideoId) {
+            const sourceId = currentSource.id;
+            fetchXTweetVideoUrl(currentSource.xVideoId).then(mp4Url => {
+              if (mp4Url && lastInitializedSourceRef.current === sourceId) {
+                setXVideo(prev => prev ? { ...prev, mp4Url } : prev);
+              }
+            });
+          }
         } else {
           // Reset the ref when switching to a different type or no source
           lastInitializedSourceRef.current = null;
@@ -5020,6 +5033,9 @@
         }
         if (audioPlayerRef.current) {
           audioPlayerRef.current.playbackRate = speed;
+        }
+        if (videoPlayerRef.current) {
+          videoPlayerRef.current.playbackRate = speed;
         }
       }, [speed]);
 
@@ -5095,10 +5111,17 @@
             artwork: currentSource?.thumbnail || null
           });
         } else if (xVideo) {
-          // X.com: Use timer-based controls
+          // X.com: control the native <video> element when we have an MP4,
+          // otherwise fall back to timer-based state for iframe embeds
           MediaSessionManager.setActionHandlers({
-            onPlay: () => { setIsPlaying(true); requestWakeLock(); },
-            onPause: () => { setIsPlaying(false); releaseWakeLock(); },
+            onPlay: () => {
+              if (videoPlayerRef.current) videoPlayerRef.current.play();
+              else { setIsPlaying(true); requestWakeLock(); }
+            },
+            onPause: () => {
+              if (videoPlayerRef.current) videoPlayerRef.current.pause();
+              else { setIsPlaying(false); releaseWakeLock(); }
+            },
             onSeekBackward: null,
             onSeekForward: null,
             onPreviousTrack: null,
@@ -5168,9 +5191,10 @@
         }
       }, [carMode, videoId]);
 
-      // X.com timer: manually track elapsed time since we can't query iframe position
+      // X.com timer: manually track elapsed time for iframe-only embeds.
+      // Skipped when an MP4 is loaded — the <video> element drives currentTime via onTimeUpdate.
       useEffect(() => {
-        if (!xVideo) return;
+        if (!xVideo || xVideo.mp4Url) return;
         if (isPlaying) {
           intervalRef.current = setInterval(() => {
             setCurrentTime(prev => prev + 0.5);
@@ -5194,6 +5218,28 @@
         const tweetMatch = url.match(/(?:x\.com|twitter\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/);
         if (tweetMatch) return { type: 'tweet', id: tweetMatch[2], username: tweetMatch[1] };
         return null;
+      };
+
+      // Fetch the direct MP4 URL for a tweet via Twitter's syndication endpoint
+      // (the same one their embed widget uses internally). Returns null if the
+      // tweet has no video or the request fails.
+      const fetchXTweetVideoUrl = async (tweetId) => {
+        try {
+          const token = ((Number(tweetId) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '');
+          const endpoint = `https://cdn.syndication.twimg.com/tweet-result?id=${tweetId}&token=${token}&lang=en`;
+          const response = await fetch(endpoint);
+          if (!response.ok) return null;
+          const data = await response.json();
+          const media = (data?.mediaDetails || []).find(m => m?.video_info?.variants);
+          if (!media) return null;
+          const mp4 = media.video_info.variants
+            .filter(v => v.content_type === 'video/mp4' && v.bitrate)
+            .sort((a, b) => b.bitrate - a.bitrate)[0];
+          return mp4?.url || null;
+        } catch (err) {
+          console.log('Could not fetch X.com video URL:', err);
+          return null;
+        }
       };
 
       // Detect URL type based on the actual URL
@@ -5928,12 +5974,17 @@
             console.log('Could not fetch X.com oEmbed metadata:', err);
           }
 
+          // Fetch direct MP4 URL via syndication endpoint so we can render a
+          // native <video> element with full playback control. Broadcasts and
+          // tweets without video fall back to the iframe embed.
+          const mp4Url = info.type === 'tweet' ? await fetchXTweetVideoUrl(info.id) : null;
+
           setVideoId(null);
           setPodcastAudio(null);
           setIsPlaying(false);
           setCurrentTime(0);
           setDuration(0);
-          setXVideo({ id: info.id, embedUrl, type: info.type });
+          setXVideo({ id: info.id, embedUrl, type: info.type, mp4Url });
 
           addSource({
             type: 'xvideo',
@@ -5946,7 +5997,7 @@
           });
 
           setUrl('');
-          showToast('X video loaded — tap Play to start timer for timestamped notes');
+          showToast(mp4Url ? 'X video loaded' : 'X video loaded — tap Play to start timer for timestamped notes');
         } else {
           // Unknown URL type - try loading as RSS feed before giving up
           try {
@@ -6122,6 +6173,11 @@
 
       const togglePlayback = () => {
         if (xVideo) {
+          if (videoPlayerRef.current) {
+            if (videoPlayerRef.current.paused) videoPlayerRef.current.play();
+            else videoPlayerRef.current.pause();
+            return;
+          }
           const newPlaying = !isPlaying;
           setIsPlaying(newPlaying);
           if (newPlaying) requestWakeLock();
@@ -6139,6 +6195,12 @@
 
       const skipTime = (seconds) => {
         if (xVideo) {
+          if (videoPlayerRef.current) {
+            const dur = videoPlayerRef.current.duration || duration || 0;
+            const newTime = Math.max(0, Math.min(dur || Infinity, videoPlayerRef.current.currentTime + seconds));
+            videoPlayerRef.current.currentTime = newTime;
+            return;
+          }
           setCurrentTime(prev => Math.max(0, prev + seconds));
           return;
         }
@@ -6607,15 +6669,48 @@
               )}
 
               <div className="youtube-container" style={carMode ? { position: 'absolute', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none' } : {}}>
-                <iframe
-                  key={xVideo.embedUrl}
-                  src={xVideo.embedUrl}
-                  style={{ width: '100%', height: '100%', border: 'none' }}
-                  allowFullScreen
-                  allow="autoplay; fullscreen"
-                  scrolling="no"
-                  title="X Video"
-                />
+                {xVideo.mp4Url ? (
+                  <video
+                    ref={videoPlayerRef}
+                    key={xVideo.mp4Url}
+                    src={xVideo.mp4Url}
+                    controls
+                    playsInline
+                    style={{ width: '100%', height: '100%', background: '#000' }}
+                    onLoadedMetadata={(e) => {
+                      const dur = e.target.duration;
+                      if (isFinite(dur)) {
+                        setDuration(dur);
+                        if (currentSource?.id) updateSource(currentSource.id, { duration: dur });
+                      }
+                      try {
+                        const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+                        const savedPosition = savedPositions[currentSource?.id];
+                        if (savedPosition) e.target.currentTime = savedPosition;
+                      } catch (err) { /* ignore */ }
+                      if (speed && speed !== 1) e.target.playbackRate = speed;
+                    }}
+                    onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
+                    onPlay={() => { setIsPlaying(true); requestWakeLock(); }}
+                    onPause={() => { setIsPlaying(false); releaseWakeLock(); }}
+                    onEnded={() => {
+                      releaseWakeLock();
+                      if (currentSource?.id && !currentSource.isRead) {
+                        updateSource(currentSource.id, { isRead: true });
+                      }
+                    }}
+                  />
+                ) : (
+                  <iframe
+                    key={xVideo.embedUrl}
+                    src={xVideo.embedUrl}
+                    style={{ width: '100%', height: '100%', border: 'none' }}
+                    allowFullScreen
+                    allow="autoplay; fullscreen"
+                    scrolling="no"
+                    title="X Video"
+                  />
+                )}
               </div>
 
               {showTextNote && (
