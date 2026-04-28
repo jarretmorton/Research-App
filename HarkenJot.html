@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -7363,6 +7363,9 @@
             firstSource = false;
 
             exportText += `${source.title} (${source.url || source.link || ''})\n`;
+            if (source.notebookLMUrl) {
+              exportText += `NotebookLM: ${source.notebookLMUrl}\n`;
+            }
 
             if (sourceNotes.length > 0) {
               exportText += 'Notes:\n';
@@ -7371,8 +7374,10 @@
                 if (note.timestamp !== undefined) {
                   notePrefix = `[${formatTime(note.timestamp)}] `;
                 } else if (note.position !== undefined && note.context) {
-                  const firstThree = getFirstThreeWords(note.context);
-                  notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+                  const sentenceLabel = note.fullSentenceCaptured
+                    ? `"${note.context}"`
+                    : `"${getFirstThreeWords(note.context)}..."`;
+                  notePrefix = `[Sentence ${note.position + 1} ${sentenceLabel}] `;
                 }
                 exportText += `- ${notePrefix}${note.text}\n`;
               });
@@ -7652,11 +7657,15 @@
         if (note.timestamp !== undefined) {
           notePrefix = `[${formatTime(note.timestamp)}] `;
         } else if (note.position !== undefined && note.context) {
-          const firstThree = getFirstThreeWords(note.context);
-          notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+          const sentenceLabel = note.fullSentenceCaptured
+            ? `"${note.context}"`
+            : `"${getFirstThreeWords(note.context)}..."`;
+          notePrefix = `[Sentence ${note.position + 1} ${sentenceLabel}] `;
         }
 
-        const noteText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})\nNotes:\n- ${notePrefix}${note.text}`;
+        const header = `${currentSource.title} (${currentSource.url || currentSource.link || ''})`
+          + (currentSource.notebookLMUrl ? `\nNotebookLM: ${currentSource.notebookLMUrl}` : '');
+        const noteText = `${header}\nNotes:\n- ${notePrefix}${note.text}`;
         navigator.clipboard.writeText(noteText);
         showToast('Note copied to clipboard');
       };
@@ -7671,6 +7680,9 @@
         };
 
         let exportText = `${currentSource.title} (${currentSource.url || currentSource.link || ''})`;
+        if (currentSource.notebookLMUrl) {
+          exportText += `\nNotebookLM: ${currentSource.notebookLMUrl}`;
+        }
 
         if (notes.length > 0) {
           exportText += `\nNotes:\n`;
@@ -7679,8 +7691,10 @@
             if (note.timestamp !== undefined) {
               notePrefix = `[${formatTime(note.timestamp)}] `;
             } else if (note.position !== undefined && note.context) {
-              const firstThree = getFirstThreeWords(note.context);
-              notePrefix = `[Sentence ${note.position + 1} "${firstThree}..."] `;
+              const sentenceLabel = note.fullSentenceCaptured
+                ? `"${note.context}"`
+                : `"${getFirstThreeWords(note.context)}..."`;
+              notePrefix = `[Sentence ${note.position + 1} ${sentenceLabel}] `;
             }
             exportText += `- ${notePrefix}${note.text}\n`;
           });
