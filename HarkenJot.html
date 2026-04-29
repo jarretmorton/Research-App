@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3683,31 +3683,52 @@
                   ? ['https://www.lesswrong.com', urlObj.origin]
                   : [urlObj.origin];
 
+                // Try each origin through every available CORS proxy. The standard
+                // fetcher uses three proxies; we mirror that here so the GraphQL path
+                // doesn't silently fail when one proxy is rate-limited or down.
+                const gqlProxies = [
+                  { name: 'allorigins', wrap: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+                  { name: 'corsproxy.io', wrap: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+                  { name: 'codetabs', wrap: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}` },
+                ];
+
                 let loaded = false;
-                for (const origin of gqlOrigins) {
+                outer: for (const origin of gqlOrigins) {
                   const gqlUrl = `${origin}/graphql?query=${encodeURIComponent(gqlQuery)}`;
-                  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gqlUrl)}`;
-
-                  const response = await fetch(proxyUrl);
-                  if (!response.ok) continue;
-                  const proxyData = await response.json();
-                  let gqlData;
-                  try { gqlData = JSON.parse(proxyData.contents); } catch { continue; }
-                  const result = gqlData?.data?.post?.result;
-
-                  if (result?.htmlBody && result.htmlBody.length > 100) {
-                    const extracted = tryExtractArticle(result.htmlBody);
-                    if (extracted) {
-                      const title = result.title || extracted.title;
-                      const { text } = extracted;
-                      const sentences = splitIntoSentences(text);
-                      sentencesRef.current = sentences;
-                      addSource({ type: 'article', title, url, content: text });
-                      setUrl('');
-                      showToast('Article loaded successfully!');
-                      setLoading(false);
-                      loaded = true;
-                      break;
+                  for (const proxy of gqlProxies) {
+                    try {
+                      const response = await fetch(proxy.wrap(gqlUrl));
+                      if (!response.ok) {
+                        console.log(`GraphQL via ${proxy.name} (${origin}) returned ${response.status}`);
+                        continue;
+                      }
+                      const text = await response.text();
+                      let gqlData;
+                      try { gqlData = JSON.parse(text); } catch {
+                        console.log(`GraphQL via ${proxy.name} (${origin}) returned non-JSON`);
+                        continue;
+                      }
+                      if (gqlData?.errors?.length) {
+                        console.log(`GraphQL via ${proxy.name} (${origin}) errors:`, gqlData.errors);
+                      }
+                      const result = gqlData?.data?.post?.result;
+                      if (result?.htmlBody && result.htmlBody.length > 100) {
+                        const extracted = tryExtractArticle(result.htmlBody);
+                        if (extracted) {
+                          const title = result.title || extracted.title;
+                          const { text: bodyText } = extracted;
+                          const sentences = splitIntoSentences(bodyText);
+                          sentencesRef.current = sentences;
+                          addSource({ type: 'article', title, url, content: bodyText });
+                          setUrl('');
+                          showToast('Article loaded successfully!');
+                          setLoading(false);
+                          loaded = true;
+                          break outer;
+                        }
+                      }
+                    } catch (e) {
+                      console.log(`GraphQL via ${proxy.name} (${origin}) failed:`, e.message);
                     }
                   }
                 }
@@ -3779,19 +3800,9 @@
             }
           }
 
-          // Strategy 4: Try Google Webcache via proxies
-          if (!extracted) {
-            try {
-              console.log('Trying Google Webcache...');
-              showToast('Trying Google cache...');
-              const cacheUrl = `https://webcache.googleusercontent.com/search?q=cache:${encodeURIComponent(url)}&strip=1`;
-              const cacheHtml = await fetchHtmlViaProxies(cacheUrl);
-              extracted = tryExtractArticle(cacheHtml);
-              if (extracted) console.log('Google Webcache succeeded');
-            } catch (e) {
-              console.log('Google Webcache failed:', e.message);
-            }
-          }
+          // Google Webcache (webcache.googleusercontent.com) was retired in 2024 and
+          // now redirects to a regular Google search results page. Importing that
+          // page as the "article" produced garbage entries, so it is not used.
 
           if (!extracted) {
             showToast('Could not extract enough content. Try pasting manually.');
