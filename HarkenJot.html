@@ -2562,7 +2562,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.4</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3663,6 +3663,10 @@
           // Strategy 0: ForumMagnum GraphQL API (LessWrong, Alignment Forum, EA Forum)
           // These sites block CORS proxy requests with 403, but expose a public GraphQL API
           // that returns clean post HTML via their /graphql endpoint.
+          // Alignment Forum posts are mirrored from LessWrong with the same documentId,
+          // and AF's own /graphql endpoint doesn't reliably return htmlBody — so route
+          // alignmentforum.org URLs to lesswrong.com's GraphQL, falling back to the
+          // post's own origin if that fails.
           if (isForumMagnumUrl(url)) {
             try {
               showToast('Fetching via LessWrong API...');
@@ -3674,13 +3678,21 @@
 
               if (documentId) {
                 const gqlQuery = `{post(input:{selector:{documentId:"${documentId}"}}){result{title,htmlBody}}}`;
-                const gqlUrl = `${urlObj.origin}/graphql?query=${encodeURIComponent(gqlQuery)}`;
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gqlUrl)}`;
+                const host = urlObj.hostname.replace(/^www\./, '');
+                const gqlOrigins = host === 'alignmentforum.org'
+                  ? ['https://www.lesswrong.com', urlObj.origin]
+                  : [urlObj.origin];
 
-                const response = await fetch(proxyUrl);
-                if (response.ok) {
+                let loaded = false;
+                for (const origin of gqlOrigins) {
+                  const gqlUrl = `${origin}/graphql?query=${encodeURIComponent(gqlQuery)}`;
+                  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gqlUrl)}`;
+
+                  const response = await fetch(proxyUrl);
+                  if (!response.ok) continue;
                   const proxyData = await response.json();
-                  const gqlData = JSON.parse(proxyData.contents);
+                  let gqlData;
+                  try { gqlData = JSON.parse(proxyData.contents); } catch { continue; }
                   const result = gqlData?.data?.post?.result;
 
                   if (result?.htmlBody && result.htmlBody.length > 100) {
@@ -3694,10 +3706,12 @@
                       setUrl('');
                       showToast('Article loaded successfully!');
                       setLoading(false);
-                      return;
+                      loaded = true;
+                      break;
                     }
                   }
                 }
+                if (loaded) return;
               }
               console.log('ForumMagnum GraphQL failed, falling back to standard strategies');
             } catch (e) {
