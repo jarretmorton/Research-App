@@ -2407,6 +2407,38 @@
       };
 
       const addSource = (source) => {
+        // Detect duplicates so users don't unintentionally clutter the library
+        // with multiple copies of the same article/video/podcast/file.
+        const normalizeUrl = (u) => (u || '').trim().toLowerCase().replace(/#.*$/, '').replace(/\/$/, '');
+        const findDuplicate = () => {
+          const urlA = normalizeUrl(source.url);
+          if (urlA) {
+            const dup = sources.find(s => normalizeUrl(s.url) === urlA);
+            if (dup) return dup;
+          }
+          if (source.videoId) {
+            const dup = sources.find(s => s.videoId && s.videoId === source.videoId);
+            if (dup) return dup;
+          }
+          if (source.xVideoId) {
+            const dup = sources.find(s => s.xVideoId && s.xVideoId === source.xVideoId);
+            if (dup) return dup;
+          }
+          if (source.localFile && source.fileName) {
+            const dup = sources.find(s => s.localFile && s.fileName === source.fileName && s.type === source.type);
+            if (dup) return dup;
+          }
+          return null;
+        };
+        const existing = findDuplicate();
+        if (existing) {
+          const proceed = window.confirm(`"${existing.title}" is already in your library. Add another copy anyway?\n\nClick Cancel to open the existing one instead.`);
+          if (!proceed) {
+            setCurrentSource(existing);
+            showToast('Opened existing source');
+            return existing;
+          }
+        }
         const newSource = { ...source, id: generateId(), createdAt: new Date().toISOString() };
         setSources(prev => [newSource, ...prev]);
         setCurrentSource(newSource);
@@ -2562,7 +2594,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.22.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
