@@ -205,6 +205,7 @@ The current version is shown in the app header. Update it in the `App` component
   - PR creation link: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
   - If a PR already exists: `https://github.com/jarretmorton/Research-App/pull/<pr-number>`
 - **After every push**, create or update the PR using `gh pr create` (or `gh pr edit` if one already exists for the branch). This ensures the in-app "Create PR" / "Update PR" button in Claude Code always reflects the latest pushed changes, not just the initial PR of the session. This allows merging directly from the GitHub mobile app at any point during the session.
+- **Before linking a PR, always verify it is still open.** If the branch's most recent PR has already been merged or closed, the link is "not executable" — the user can't act on it. In that case, open a NEW PR for the unmerged commits on the same branch (or create a new branch if needed) and link the new PR. Never make the user ask for a fresh PR link.
 
 ## Deployment
 
