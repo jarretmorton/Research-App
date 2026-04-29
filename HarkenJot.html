@@ -2407,44 +2407,62 @@
       };
 
       const addSource = (source) => {
-        // Detect duplicates so users don't unintentionally clutter the library
-        // with multiple copies of the same article/video/podcast/file.
-        const normalizeUrl = (u) => (u || '').trim().toLowerCase().replace(/#.*$/, '').replace(/\/$/, '');
-        const findDuplicate = () => {
-          const urlA = normalizeUrl(source.url);
-          if (urlA) {
-            const dup = sources.find(s => normalizeUrl(s.url) === urlA);
-            if (dup) return dup;
-          }
-          if (source.videoId) {
-            const dup = sources.find(s => s.videoId && s.videoId === source.videoId);
-            if (dup) return dup;
-          }
-          if (source.xVideoId) {
-            const dup = sources.find(s => s.xVideoId && s.xVideoId === source.xVideoId);
-            if (dup) return dup;
-          }
-          if (source.localFile && source.fileName) {
-            const dup = sources.find(s => s.localFile && s.fileName === source.fileName && s.type === source.type);
-            if (dup) return dup;
-          }
-          return null;
-        };
-        const existing = findDuplicate();
-        if (existing) {
-          const proceed = window.confirm(`"${existing.title}" is already in your library. Add another copy anyway?\n\nClick Cancel to open the existing one instead.`);
-          if (!proceed) {
-            setCurrentSource(existing);
-            showToast('Opened existing source');
-            return existing;
-          }
-        }
         const newSource = { ...source, id: generateId(), createdAt: new Date().toISOString() };
         setSources(prev => [newSource, ...prev]);
         setCurrentSource(newSource);
         showToast('Source added to library');
         return newSource;
       };
+
+      // Duplicate detection: loaders call checkDuplicateBeforeLoad before doing
+      // any heavy fetching/processing. If a match is found in the library, a
+      // styled confirmation modal asks whether to add another copy or open the
+      // existing source. Match keys: normalized URL, videoId (YouTube),
+      // xVideoId (X video), or localFile + fileName + type (local audio).
+      const [duplicateModal, setDuplicateModal] = useState(null);
+
+      const findDuplicateSource = useCallback((candidate) => {
+        if (!candidate) return null;
+        const normalizeUrl = (u) => (u || '').trim().toLowerCase().replace(/#.*$/, '').replace(/\/$/, '');
+        const urlA = normalizeUrl(candidate.url);
+        if (urlA) {
+          const dup = sources.find(s => normalizeUrl(s.url) === urlA);
+          if (dup) return dup;
+        }
+        if (candidate.videoId) {
+          const dup = sources.find(s => s.videoId && s.videoId === candidate.videoId);
+          if (dup) return dup;
+        }
+        if (candidate.xVideoId) {
+          const dup = sources.find(s => s.xVideoId && s.xVideoId === candidate.xVideoId);
+          if (dup) return dup;
+        }
+        if (candidate.localFile && candidate.fileName) {
+          const dup = sources.find(s => s.localFile && s.fileName === candidate.fileName && s.type === candidate.type);
+          if (dup) return dup;
+        }
+        return null;
+      }, [sources]);
+
+      const openExistingSource = useCallback((source) => {
+        setCurrentSource(source);
+        const isMedia = source.type === 'youtube' || source.type === 'podcast' || source.type === 'xvideo';
+        changeTab(isMedia ? 'media' : 'reader');
+      }, [changeTab]);
+
+      const checkDuplicateBeforeLoad = useCallback(async (candidate) => {
+        const existing = findDuplicateSource(candidate);
+        if (!existing) return true;
+        const proceed = await new Promise((resolve) => {
+          setDuplicateModal({ existing, resolve });
+        });
+        if (!proceed) {
+          openExistingSource(existing);
+          showToast('Opened existing source');
+          return false;
+        }
+        return true;
+      }, [findDuplicateSource, openExistingSource]);
 
       const updateSource = (sourceId, updates) => {
         setSources(prev => prev.map(s => s.id === sourceId ? { ...s, ...updates } : s));
@@ -2594,7 +2612,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -2663,6 +2681,7 @@
                   carMode={carMode}
                   setCarMode={setCarMode}
                   isMobileDevice={isMobileDevice}
+                  checkDuplicateBeforeLoad={checkDuplicateBeforeLoad}
                 />
               </div>
               <div style={{ display: activeTab === 'media' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -2683,6 +2702,7 @@
                   isMobileDevice={isMobileDevice}
                   pendingNotebookLMModal={pendingNotebookLMModal}
                   setPendingNotebookLMModal={setPendingNotebookLMModal}
+                  checkDuplicateBeforeLoad={checkDuplicateBeforeLoad}
                 />
               </div>
               <div style={{ display: activeTab === 'library' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -2723,6 +2743,11 @@
           </main>
 
           <Toast {...toast} onUndo={handleUndo} />
+          <DuplicateConfirmModal
+            existing={duplicateModal?.existing}
+            onConfirm={() => { const r = duplicateModal?.resolve; setDuplicateModal(null); r && r(true); }}
+            onCancel={() => { const r = duplicateModal?.resolve; setDuplicateModal(null); r && r(false); }}
+          />
         </div>
       );
     }
@@ -2801,6 +2826,29 @@
         >
           {title}
         </h2>
+      );
+    };
+
+    const DuplicateConfirmModal = ({ existing, onConfirm, onCancel }) => {
+      const show = !!existing;
+      return (
+        <div className={`modal-overlay ${show ? 'show' : ''}`} onClick={onCancel}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <span className="modal-title">Already in your library</span>
+              <button type="button" className="modal-close" onClick={onCancel}>&times;</button>
+            </div>
+            <div className="modal-body" style={{ padding: '1.5rem' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: 0, marginBottom: '0.5rem' }}>This source is already saved:</p>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)', wordBreak: 'break-word', margin: '0 0 1.25rem', fontSize: '1rem' }}>{existing?.title || ''}</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>Add another copy, or open the existing one?</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={onCancel}>Open Existing</button>
+              <button type="button" className="btn btn-primary" onClick={onConfirm}>Add Copy</button>
+            </div>
+          </div>
+        </div>
       );
     };
 
@@ -2963,7 +3011,7 @@
     };
 
     // Reader View Component
-    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, sources, setActiveTab, showToast, carMode, setCarMode, isMobileDevice }, ref) => {
+    const ReaderView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, sources, setActiveTab, showToast, carMode, setCarMode, isMobileDevice, checkDuplicateBeforeLoad }, ref) => {
       const [url, setUrl] = useState('');
       const [loading, setLoading] = useState(false);
       const [content, setContent] = useState(null);
@@ -3581,6 +3629,12 @@
       const fetchContent = async () => {
         if (!url.trim()) return;
 
+        // Bail out before any network work if this URL is already saved.
+        if (!await checkDuplicateBeforeLoad({ url })) {
+          setUrl('');
+          return;
+        }
+
         setLoading(true);
 
         // Helper: fetch URL as PDF binary data (direct + CORS proxy fallback)
@@ -3866,12 +3920,21 @@
         setLoading(false);
       };
 
-      const handleManualSubmit = () => {
+      const handleManualSubmit = async () => {
         if (!manualContent.trim()) return;
-        
+
+        // Only check when a URL is supplied — bare pasted text has no reliable
+        // identity key, so we let it through.
+        if (url && url.trim() && !await checkDuplicateBeforeLoad({ url })) {
+          setUrl('');
+          setShowManualInput(false);
+          setManualContent('');
+          return;
+        }
+
         const sentences = splitIntoSentences(manualContent);
         sentencesRef.current = sentences;
-        
+
         addSource({
           type: 'article',
           title: url || 'Pasted Content',
@@ -4890,7 +4953,7 @@
     });
 
     // Media View Component
-    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, sources, showToast, setActiveTab, carMode, setCarMode, isMobileDevice, pendingNotebookLMModal, setPendingNotebookLMModal }, ref) => {
+    const MediaView = React.forwardRef(({ currentSource, setCurrentSource, addSource, updateSource, addNote, notes, sources, showToast, setActiveTab, carMode, setCarMode, isMobileDevice, pendingNotebookLMModal, setPendingNotebookLMModal, checkDuplicateBeforeLoad }, ref) => {
       const [url, setUrl] = useState('');
       const [isPlaying, setIsPlaying] = useState(false);
       const [currentTime, setCurrentTime] = useState(0);
@@ -5902,6 +5965,10 @@
         input.onchange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
+          // Check before MSE/blob processing so we don't burn CPU on a duplicate.
+          if (!await checkDuplicateBeforeLoad({ type: 'podcast', localFile: true, fileName: file.name })) {
+            return;
+          }
           const blobUrl = await processLocalAudioFile(file);
           const title = file.name.replace(/\.[^.]+$/, '');
           setVideoId(null);
@@ -5954,6 +6021,22 @@
 
       const loadMedia = async () => {
         const urlType = detectUrlType(url);
+
+        // Check for duplicates before any fetching/embed-init work.
+        // For YouTube/X we extract the canonical id so different URL forms
+        // (youtu.be vs youtube.com/watch) still match.
+        const dupCandidate = { url };
+        if (urlType === 'youtube') {
+          const ytId = extractVideoId(url);
+          if (ytId) dupCandidate.videoId = ytId;
+        } else if (urlType === 'xvideo') {
+          const xInfo = extractXVideoInfo(url);
+          if (xInfo) dupCandidate.xVideoId = xInfo.id;
+        }
+        if (!await checkDuplicateBeforeLoad(dupCandidate)) {
+          setUrl('');
+          return;
+        }
 
         if (urlType === 'youtube') {
           const id = extractVideoId(url);
