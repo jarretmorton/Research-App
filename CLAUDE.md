@@ -204,8 +204,12 @@ The current version is shown in the app header. Update it in the `App` component
 - **CRITICAL: After EVERY `git push`, you MUST provide the GitHub PR URL.** This is non-negotiable. Always include the link in your response immediately after pushing:
   - PR creation link: `https://github.com/jarretmorton/Research-App/pull/new/<branch-name>`
   - If a PR already exists: `https://github.com/jarretmorton/Research-App/pull/<pr-number>`
-- **After every push**, create or update the PR using `gh pr create` (or `gh pr edit` if one already exists for the branch). This ensures the in-app "Create PR" / "Update PR" button in Claude Code always reflects the latest pushed changes, not just the initial PR of the session. This allows merging directly from the GitHub mobile app at any point during the session.
-- **Before linking a PR, always verify it is still open.** If the branch's most recent PR has already been merged or closed, the link is "not executable" — the user can't act on it. In that case, open a NEW PR for the unmerged commits on the same branch (or create a new branch if needed) and link the new PR. Never make the user ask for a fresh PR link.
+- **MANDATORY post-push sequence — do these in order, every time, no exceptions:**
+  1. **Check the state of any existing PR for the branch FIRST**, before doing anything else with PRs. Use `pull_request_read` (or `gh pr view`) to read the `state` and `merged` fields. Do NOT skip this step even if you opened the PR earlier in the same session — it may have been merged between your last action and now.
+  2. **If the most recent PR for the branch is `closed` or `merged`:** open a NEW PR for the unmerged commits with `create_pull_request` (or `gh pr create`). Do NOT update or link the closed PR — its link is not executable.
+  3. **If the most recent PR is `open`:** update its title/body with `update_pull_request` (or `gh pr edit`) so the in-app "Update PR" button reflects the latest pushed changes.
+  4. **Only link a PR whose state you just verified as `open`.** A merged or closed PR link is "not executable" — the user cannot act on it from mobile, and forcing them to ask for a fresh link is a hard failure of this workflow.
+- After every push, the PR link in your response MUST be to a currently-open PR. If you cannot produce one (e.g. the create call failed), say so explicitly rather than linking a stale PR.
 
 ## Deployment
 
