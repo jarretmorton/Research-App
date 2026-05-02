@@ -2612,7 +2612,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3364,6 +3364,10 @@
           'article',
           '[role="main"]',
           'main',
+          '.available-content',     // Substack
+          '.body.markup',           // Substack
+          'div.markup',             // Substack
+          '.post-content-wrapper',  // Substack
           '.article-content',
           '.post-content',
           '.entry-content',
@@ -3889,6 +3893,40 @@
           // Google Webcache (webcache.googleusercontent.com) was retired in 2024 and
           // now redirects to a regular Google search results page. Importing that
           // page as the "article" produced garbage entries, so it is not used.
+
+          // Strategy 5: Substack JSON API fallback
+          // Substack (and custom-domain Substack sites like latent.space) expose
+          // a public post API at <origin>/api/v1/posts/<slug> that returns
+          // clean body_html, bypassing the Cloudflare/bot checks that often
+          // strip article content from proxy-fetched HTML.
+          if (!extracted) {
+            try {
+              const u = new URL(url.startsWith('http') ? url : 'https://' + url);
+              const slugMatch = u.pathname.match(/^\/p\/([^/?#]+)/);
+              if (slugMatch) {
+                console.log('Trying Substack JSON API...');
+                showToast('Trying Substack API...');
+                const apiUrl = `${u.origin}/api/v1/posts/${slugMatch[1]}`;
+                const apiResponse = await fetchHtmlViaProxies(apiUrl);
+                if (apiResponse) {
+                  try {
+                    const data = JSON.parse(apiResponse);
+                    const bodyHtml = data?.body_html || data?.body || '';
+                    if (bodyHtml && bodyHtml.length > 100) {
+                      const wrappedHtml = `<html><body>${bodyHtml}</body></html>`;
+                      extracted = tryExtractArticle(wrappedHtml);
+                      if (extracted) {
+                        if (data.title) extracted.title = data.title;
+                        console.log('Substack JSON API succeeded');
+                      }
+                    }
+                  } catch (e) { /* not Substack or non-JSON response */ }
+                }
+              }
+            } catch (e) {
+              console.log('Substack JSON API failed:', e.message);
+            }
+          }
 
           if (!extracted) {
             showToast('Could not extract enough content. Try pasting manually.');
@@ -5569,22 +5607,32 @@
 
       // Parse RSS feed and find episode
       const parseRSSAndFindEpisode = async (feedUrl, episodeTitle) => {
-        // Try direct fetch first (some feeds support CORS), then CORS proxies
+        // Try direct fetch first (some feeds support CORS), then CORS proxies.
+        // Substack-hosted feeds (api.substack.com/feed/podcast/*.rss, used by
+        // Latent Space and other Substack podcasts) intermittently fail through
+        // a single proxy, so we try several formats including allorigins's JSON
+        // wrapper which often succeeds when /raw is rate-limited.
         const fetchStrategies = [
-          (u) => u,  // Direct fetch (no proxy)
-          (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-          (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-          (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+          { build: (u) => u, extract: (t) => t },
+          { build: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, extract: (t) => t },
+          { build: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`, extract: (t) => t },
+          { build: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, extract: (t) => t },
+          {
+            build: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+            extract: (t) => { try { return JSON.parse(t).contents || ''; } catch { return ''; } }
+          }
         ];
+
+        const isXmlFeed = (text) => text && (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml'));
 
         let xmlText = null;
         for (const strategy of fetchStrategies) {
           try {
-            const response = await fetch(strategy(feedUrl));
+            const response = await fetch(strategy.build(feedUrl));
             if (response.ok) {
-              const text = await response.text();
-              // Validate response is actually XML/RSS, not an HTML error page
-              if (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml')) {
+              const raw = await response.text();
+              const text = strategy.extract(raw);
+              if (isXmlFeed(text)) {
                 xmlText = text;
                 break;
               }
