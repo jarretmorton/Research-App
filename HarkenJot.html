@@ -2612,7 +2612,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.5</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4038,30 +4038,49 @@
         }
       };
 
-      // Get best available voice (prioritize Google, then Microsoft)
+      // Get best available voice. Local voices are preferred over remote ones:
+      // remote voices (e.g. desktop Chrome's "Google US English") incur a network
+      // round-trip per utterance, which manifests as a noticeable pause between
+      // sentences. Local voices hand off near-instantly, matching the tight
+      // sentence cadence already heard on mobile.
       const getBestVoice = () => {
         const voices = window.speechSynthesis.getVoices();
         if (!voices.length) return null;
 
-        // Filter for English voices only
         const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+        const localEnglish = englishVoices.filter(voice => voice.localService);
 
-        // Prioritize Google voices
+        // 1. Local Google English voice (e.g. Android "Google US English")
+        const localGoogle = localEnglish.find(voice => voice.name.includes('Google'));
+        if (localGoogle) return localGoogle;
+
+        // 2. Local Microsoft Natural/Online English voice (Windows 11 Natural voices)
+        const localMicrosoftPremium = localEnglish.find(voice =>
+          voice.name.includes('Microsoft') &&
+          (voice.name.includes('Natural') || voice.name.includes('Online'))
+        );
+        if (localMicrosoftPremium) return localMicrosoftPremium;
+
+        // 3. Any local English voice (macOS "Samantha", Windows "Microsoft David", iOS voices, etc.)
+        if (localEnglish.length) return localEnglish[0];
+
+        // 4. Any local voice in any language (last-resort local before going remote)
+        const anyLocal = voices.find(voice => voice.localService);
+        if (anyLocal) return anyLocal;
+
+        // 5. Remote fallbacks (original ordering) for users with no local voices installed
         const googleVoice = englishVoices.find(voice => voice.name.includes('Google'));
         if (googleVoice) return googleVoice;
 
-        // Then Microsoft voices (prefer ones with "Online" or newer versions)
         const microsoftVoice = englishVoices.find(voice =>
           voice.name.includes('Microsoft') &&
           (voice.name.includes('Online') || voice.name.includes('Natural'))
         );
         if (microsoftVoice) return microsoftVoice;
 
-        // Fall back to any Microsoft voice
         const anyMicrosoftVoice = englishVoices.find(voice => voice.name.includes('Microsoft'));
         if (anyMicrosoftVoice) return anyMicrosoftVoice;
 
-        // Fall back to first English voice
         return englishVoices[0] || voices[0];
       };
 
