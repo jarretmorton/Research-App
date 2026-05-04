@@ -2612,7 +2612,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.5</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.6</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3724,13 +3724,55 @@
               }
             ];
 
+            // Decode a fetch Response body, decompressing gzip/brotli if the proxy
+            // forwarded compressed bytes without a matching Content-Encoding header.
+            const decodeBody = async (response) => {
+              const buf = await response.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              const isGzip = bytes[0] === 0x1f && bytes[1] === 0x8b;
+              // Brotli has no universal magic bytes but commonly starts with 0xce or varies;
+              // detect via Content-Encoding header as a hint when present.
+              const ce = response.headers.get('content-encoding') || '';
+              const isBrotli = ce.includes('br') || (!isGzip && bytes[0] === 0x0b);
+              const format = isGzip ? 'gzip' : (isBrotli ? 'deflate-raw' : null);
+              if (format) {
+                try {
+                  const ds = new DecompressionStream(isGzip ? 'gzip' : 'deflate-raw');
+                  const writer = ds.writable.getWriter();
+                  const reader = ds.readable.getReader();
+                  writer.write(buf);
+                  writer.close();
+                  const chunks = [];
+                  while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                  }
+                  const total = chunks.reduce((acc, c) => acc + c.length, 0);
+                  const out = new Uint8Array(total);
+                  let off = 0;
+                  for (const c of chunks) { out.set(c, off); off += c.length; }
+                  return new TextDecoder().decode(out);
+                } catch (_) {
+                  // decompression failed — fall back to raw decode
+                }
+              }
+              return new TextDecoder().decode(buf);
+            };
+
             for (const proxy of corsProxies) {
               try {
                 console.log(`Trying ${proxy.name} proxy for ${targetUrl}...`);
                 const proxyUrl = proxy.url(targetUrl);
                 const response = await fetch(proxyUrl);
                 if (!response.ok) throw new Error(`${proxy.name} returned ${response.status}`);
-                const data = await (proxy.name === 'allorigins' ? response.json() : response.text());
+                let data;
+                if (proxy.name === 'allorigins') {
+                  data = await response.json();
+                } else {
+                  const text = await decodeBody(response);
+                  data = text;
+                }
                 const html = proxy.extract(data);
                 if (html && html.length > 100) {
                   console.log(`${proxy.name} succeeded`);
