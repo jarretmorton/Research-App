@@ -1944,6 +1944,16 @@
       const secs = Math.floor(seconds % 60);
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
+    // Build the title line used in copy/export text. Includes the podcast series
+    // (showName) before the episode title so pasted notes identify the show.
+    const formatSourceHeader = (source) => {
+      if (!source) return '';
+      const urlParts = [source.url || source.link || '', source.notebookLMUrl].filter(Boolean);
+      const titleLine = source.type === 'podcast' && source.showName
+        ? `${source.showName}: ${source.title}`
+        : source.title;
+      return urlParts.length > 0 ? `${titleLine} (${urlParts.join(', ')})` : titleLine;
+    };
 
     // Trigger phrases that, when present at the start of a note, cause the full
     // source sentence to be captured in the note's context (instead of the
@@ -2700,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.24.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -7793,8 +7803,7 @@
             }
             firstSource = false;
 
-            const urlParts = [source.url || source.link || '', source.notebookLMUrl].filter(Boolean);
-            exportText += `${source.title} (${urlParts.join(', ')})\n`;
+            exportText += `${formatSourceHeader(source)}\n`;
 
             if (sourceNotes.length > 0) {
               exportText += 'Notes:\n';
@@ -8090,8 +8099,7 @@
           notePrefix = `[Sentence ${note.position + 1} ${sentenceLabel}] `;
         }
 
-        const urlParts = [currentSource.url || currentSource.link || '', currentSource.notebookLMUrl].filter(Boolean);
-        const noteText = `${currentSource.title} (${urlParts.join(', ')})\nNotes:\n- ${notePrefix}${note.text}`;
+        const noteText = `${formatSourceHeader(currentSource)}\nNotes:\n- ${notePrefix}${note.text}`;
         navigator.clipboard.writeText(noteText);
         showToast('Note copied to clipboard');
       };
@@ -8105,8 +8113,7 @@
           return words.join(' ');
         };
 
-        const urlParts = [currentSource.url || currentSource.link || '', currentSource.notebookLMUrl].filter(Boolean);
-        let exportText = `${currentSource.title} (${urlParts.join(', ')})`;
+        let exportText = formatSourceHeader(currentSource);
 
         if (notes.length > 0) {
           exportText += `\nNotes:\n`;
