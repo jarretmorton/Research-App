@@ -3808,18 +3808,91 @@
               }
             ];
 
+            // Returns true when a string appears to be binary/compressed data rather than
+            // readable text. TextDecoder replaces invalid UTF-8 byte sequences with U+FFFD;
+            // a high density of replacement chars or C0 control chars indicates raw bytes.
+            const looksLikeBinary = (text) => {
+              if (!text || text.length < 20) return false;
+              const sample = text.slice(0, 500);
+              let bad = 0;
+              for (let i = 0; i < sample.length; i++) {
+                const c = sample.charCodeAt(i);
+                if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++;
+                if (c === 0xFFFD) bad++;
+              }
+              return bad / sample.length > 0.03;
+            };
+
+            // Try to decompress an ArrayBuffer using DecompressionStream.
+            // Returns the decoded string, or null if decompression fails/unsupported.
+            const tryDecompress = async (buf, format) => {
+              try {
+                const ds = new DecompressionStream(format);
+                const writer = ds.writable.getWriter();
+                const reader = ds.readable.getReader();
+                writer.write(buf);
+                writer.close();
+                const chunks = [];
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  chunks.push(value);
+                }
+                const total = chunks.reduce((acc, c) => acc + c.length, 0);
+                const out = new Uint8Array(total);
+                let off = 0;
+                for (const c of chunks) { out.set(c, off); off += c.length; }
+                return new TextDecoder().decode(out);
+              } catch (_) {
+                return null;
+              }
+            };
+
+            // Decode a fetch Response body, handling cases where the proxy forwarded
+            // compressed bytes without a matching Content-Encoding header so the browser
+            // never decompressed them. Tries gzip, then brotli (Chrome 133+).
+            const decodeBody = async (response) => {
+              const buf = await response.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              // Gzip magic bytes
+              if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+                const result = await tryDecompress(buf, 'gzip');
+                if (result) return result;
+              }
+              const text = new TextDecoder().decode(buf);
+              // If it looks like binary (e.g. brotli), try brotli decompression (Chrome 133+)
+              if (looksLikeBinary(text)) {
+                const result = await tryDecompress(buf, 'brotli');
+                if (result && !looksLikeBinary(result)) return result;
+              }
+              return text;
+            };
+
             for (const proxy of corsProxies) {
               try {
                 console.log(`Trying ${proxy.name} proxy for ${targetUrl}...`);
                 const proxyUrl = proxy.url(targetUrl);
                 const response = await fetch(proxyUrl);
                 if (!response.ok) throw new Error(`${proxy.name} returned ${response.status}`);
-                const data = await (proxy.name === 'allorigins' ? response.json() : response.text());
-                const html = proxy.extract(data);
-                if (html && html.length > 100) {
+                let html;
+                if (proxy.name === 'allorigins') {
+                  const data = await response.json();
+                  html = proxy.extract(data);
+                  // allorigins may occasionally return raw compressed bytes in contents
+                  if (html && looksLikeBinary(html)) {
+                    const buf = new TextEncoder().encode(html).buffer;
+                    const decompressed = await tryDecompress(buf, 'brotli') || await tryDecompress(buf, 'gzip');
+                    if (decompressed && !looksLikeBinary(decompressed)) html = decompressed;
+                  }
+                } else {
+                  const text = await decodeBody(response);
+                  html = proxy.extract(text);
+                }
+                if (html && html.length > 100 && !looksLikeBinary(html)) {
                   console.log(`${proxy.name} succeeded`);
                   return html;
                 }
+                if (looksLikeBinary(html)) throw new Error(`${proxy.name} returned compressed/binary content`);
               } catch (error) {
                 console.log(`${proxy.name} failed:`, error.message);
               }
@@ -4122,30 +4195,49 @@
         }
       };
 
-      // Get best available voice (prioritize Google, then Microsoft)
+      // Get best available voice. Local voices are preferred over remote ones:
+      // remote voices (e.g. desktop Chrome's "Google US English") incur a network
+      // round-trip per utterance, which manifests as a noticeable pause between
+      // sentences. Local voices hand off near-instantly, matching the tight
+      // sentence cadence already heard on mobile.
       const getBestVoice = () => {
         const voices = window.speechSynthesis.getVoices();
         if (!voices.length) return null;
 
-        // Filter for English voices only
         const englishVoices = voices.filter(voice => voice.lang.startsWith('en'));
+        const localEnglish = englishVoices.filter(voice => voice.localService);
 
-        // Prioritize Google voices
+        // 1. Local Google English voice (e.g. Android "Google US English")
+        const localGoogle = localEnglish.find(voice => voice.name.includes('Google'));
+        if (localGoogle) return localGoogle;
+
+        // 2. Local Microsoft Natural/Online English voice (Windows 11 Natural voices)
+        const localMicrosoftPremium = localEnglish.find(voice =>
+          voice.name.includes('Microsoft') &&
+          (voice.name.includes('Natural') || voice.name.includes('Online'))
+        );
+        if (localMicrosoftPremium) return localMicrosoftPremium;
+
+        // 3. Any local English voice (macOS "Samantha", Windows "Microsoft David", iOS voices, etc.)
+        if (localEnglish.length) return localEnglish[0];
+
+        // 4. Any local voice in any language (last-resort local before going remote)
+        const anyLocal = voices.find(voice => voice.localService);
+        if (anyLocal) return anyLocal;
+
+        // 5. Remote fallbacks (original ordering) for users with no local voices installed
         const googleVoice = englishVoices.find(voice => voice.name.includes('Google'));
         if (googleVoice) return googleVoice;
 
-        // Then Microsoft voices (prefer ones with "Online" or newer versions)
         const microsoftVoice = englishVoices.find(voice =>
           voice.name.includes('Microsoft') &&
           (voice.name.includes('Online') || voice.name.includes('Natural'))
         );
         if (microsoftVoice) return microsoftVoice;
 
-        // Fall back to any Microsoft voice
         const anyMicrosoftVoice = englishVoices.find(voice => voice.name.includes('Microsoft'));
         if (anyMicrosoftVoice) return anyMicrosoftVoice;
 
-        // Fall back to first English voice
         return englishVoices[0] || voices[0];
       };
 
