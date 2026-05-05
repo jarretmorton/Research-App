@@ -2015,16 +2015,152 @@
       return { score, reason };
     };
 
-    // localStorage storage monitoring — Chrome/Edge quota is ~5MB measured in string characters
-    const getStorageUsageChars = () => {
-      let total = 0;
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        total += key.length + localStorage.getItem(key).length;
-      }
-      return total;
+    // Persistent storage backed by IndexedDB. Replaces localStorage (~5 MB cap)
+    // with a much larger quota. All callers expect a synchronous get(), so we
+    // hydrate the entire keyspace into an in-memory cache during init() and
+    // write through to IDB asynchronously on each set().
+    const HJStore = {
+      _cache: {},
+      _db: null,
+      _ready: false,
+      _dbName: 'harkenjot',
+      _store: 'kv',
+      _keys: ['sources', 'notes', 'positions', 'media_positions'],
+      _lsKey: {
+        sources: 'harkenjot_sources',
+        notes: 'harkenjot_notes',
+        positions: 'harkenjot_positions',
+        media_positions: 'harkenjot_media_positions',
+      },
+
+      _open() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(this._dbName, 1);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(this._store)) db.createObjectStore(this._store);
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      },
+      _idbGet(key) {
+        return new Promise((resolve, reject) => {
+          const tx = this._db.transaction(this._store, 'readonly');
+          const req = tx.objectStore(this._store).get(key);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+      },
+      _idbPut(key, value) {
+        return new Promise((resolve, reject) => {
+          const tx = this._db.transaction(this._store, 'readwrite');
+          const req = tx.objectStore(this._store).put(value, key);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      },
+
+      // Seed the in-memory cache from localStorage. Used as a fallback when
+      // IDB is unavailable, and during the first-run migration into IDB.
+      _seedFromLocalStorage() {
+        // Honor the legacy 'marginalia_' → 'harkenjot_' rename first.
+        try {
+          ['sources', 'notes'].forEach(k => {
+            const oldRaw = localStorage.getItem('marginalia_' + k);
+            if (oldRaw && !localStorage.getItem('harkenjot_' + k)) {
+              localStorage.setItem('harkenjot_' + k, oldRaw);
+              localStorage.removeItem('marginalia_' + k);
+            }
+          });
+        } catch (e) { /* best-effort */ }
+        this._keys.forEach(k => {
+          if (this._cache[k] !== undefined) return;
+          try {
+            const raw = localStorage.getItem(this._lsKey[k]);
+            if (raw) this._cache[k] = JSON.parse(raw);
+          } catch (e) { /* corrupted entry — skip */ }
+        });
+      },
+
+      // Strip 'sentences' arrays from cached sources (derived at runtime from
+      // 'content' via splitIntoSentences). Reclaims ~40% of the sources payload.
+      _stripSentences() {
+        const sources = this._cache.sources;
+        if (!Array.isArray(sources)) return false;
+        let changed = false;
+        sources.forEach(s => { if (s.sentences) { delete s.sentences; changed = true; } });
+        return changed;
+      },
+
+      async init() {
+        try {
+          this._db = await this._open();
+        } catch (e) {
+          console.error('IndexedDB unavailable; using localStorage fallback', e);
+          this._seedFromLocalStorage();
+          this._stripSentences();
+          this._ready = true;
+          return;
+        }
+        // Hydrate cache from IDB.
+        try {
+          for (const k of this._keys) {
+            const v = await this._idbGet(k);
+            if (v !== undefined) this._cache[k] = v;
+          }
+        } catch (e) {
+          console.error('IndexedDB read failed:', e);
+        }
+        // First-run migration: copy any localStorage values that aren't in IDB
+        // yet. Leave the localStorage entries in place as a one-release safety
+        // net so a future patch can clear them after the migration is verified.
+        const before = JSON.stringify(Object.keys(this._cache).sort());
+        this._seedFromLocalStorage();
+        const after = JSON.stringify(Object.keys(this._cache).sort());
+        if (before !== after) {
+          for (const k of this._keys) {
+            if (this._cache[k] !== undefined) {
+              try { await this._idbPut(k, this._cache[k]); } catch (e) { console.error('Migration write failed for', k, e); }
+            }
+          }
+        }
+        // One-time pass to remove redundant 'sentences' arrays from sources.
+        if (this._stripSentences()) {
+          try { await this._idbPut('sources', this._cache.sources); } catch (e) { /* ignore */ }
+        }
+        // Best-effort: ask the browser to mark our IDB data as non-evictable.
+        if (navigator.storage && navigator.storage.persist) {
+          navigator.storage.persist().catch(() => {});
+        }
+        this._ready = true;
+      },
+
+      get(key) { return this._cache[key]; },
+
+      // Update the cache immediately and fire an async write to IDB. Returns
+      // a promise so callers can await persistence if needed.
+      set(key, value) {
+        this._cache[key] = value;
+        if (!this._db) return Promise.resolve();
+        return this._idbPut(key, value);
+      },
     };
-    const STORAGE_QUOTA_ESTIMATE = 5 * 1024 * 1024; // ~5M characters
+
+    // Returns { usage, quota } in bytes via the Storage API. Falls back to a
+    // rough char count over localStorage when the API is unavailable.
+    const getStorageUsage = async () => {
+      if (navigator.storage && navigator.storage.estimate) {
+        const est = await navigator.storage.estimate();
+        return { usage: est.usage || 0, quota: est.quota || 0 };
+      }
+      let chars = 0;
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        chars += k.length + (localStorage.getItem(k) || '').length;
+      }
+      return { usage: chars, quota: 5 * 1024 * 1024 };
+    };
 
     // Detect PDF URLs by extension or known academic/research URL patterns
     const isPdfUrl = (url) => {
@@ -2264,58 +2400,13 @@
       }
     };
 
-    // Migrate localStorage from old 'marginalia_' keys to new 'harkenjot_' keys
-    (function migrateLocalStorage() {
-      const migrations = [
-        ['marginalia_sources', 'harkenjot_sources'],
-        ['marginalia_notes', 'harkenjot_notes'],
-        ['harkenjot_positions', 'harkenjot_positions'],
-        ['harkenjot_subscriptions', 'harkenjot_subscriptions'],
-        ['harkenjot_media_positions', 'harkenjot_media_positions']
-      ];
-      migrations.forEach(([oldKey, newKey]) => {
-        const oldData = localStorage.getItem(oldKey);
-        if (oldData && !localStorage.getItem(newKey)) {
-          localStorage.setItem(newKey, oldData);
-          localStorage.removeItem(oldKey);
-        }
-      });
-    })();
-
-    // Strip redundant 'sentences' arrays from stored sources to reclaim ~40% localStorage space.
-    // Sentences are derived at runtime from 'content' via splitIntoSentences().
-    (function stripStoredSentences() {
-      try {
-        const raw = localStorage.getItem('harkenjot_sources');
-        if (!raw) return;
-        const sources = JSON.parse(raw);
-        let changed = false;
-        sources.forEach(s => {
-          if (s.sentences) {
-            delete s.sentences;
-            changed = true;
-          }
-        });
-        if (changed) {
-          localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
-        }
-      } catch (e) {
-        // Migration is best-effort; app will still work with sentences present
-      }
-    })();
-
     // Main App
     function App() {
       const [activeTab, setActiveTab] = useState('library');
-      const [sources, setSources] = useState(() => {
-        const saved = localStorage.getItem('harkenjot_sources');
-        return saved ? JSON.parse(saved) : [];
-      });
+      // HJStore.init() runs before ReactDOM.render, so the cache is already populated.
+      const [sources, setSources] = useState(() => HJStore.get('sources') || []);
       const [currentSource, setCurrentSource] = useState(null);
-      const [notes, setNotes] = useState(() => {
-        const saved = localStorage.getItem('harkenjot_notes');
-        return saved ? JSON.parse(saved) : [];
-      });
+      const [notes, setNotes] = useState(() => HJStore.get('notes') || []);
       const [toast, setToast] = useState({ show: false, message: '' });
       const [sidebarOpen, setSidebarOpen] = useState(false);
       const [undoData, setUndoData] = useState(null);
@@ -2355,32 +2446,29 @@
         checkMobile();
       }, []);
 
-      // Save to localStorage with storage monitoring
+      // Persist sources to IndexedDB and check usage against browser quota.
       useEffect(() => {
-        try {
-          localStorage.setItem('harkenjot_sources', JSON.stringify(sources));
-          // Check storage usage after write
-          if (!storageWarningShownRef.current) {
-            const usage = getStorageUsageChars();
-            if (usage > STORAGE_QUOTA_ESTIMATE * 0.8) {
+        HJStore.set('sources', sources).catch((e) => {
+          console.error('Failed to save sources:', e);
+          if (e && e.name === 'QuotaExceededError') showToast('Storage full — changes may not persist. Export your library and delete old sources to free space.');
+        });
+        if (!storageWarningShownRef.current) {
+          getStorageUsage().then(({ usage, quota }) => {
+            if (quota && usage > quota * 0.8) {
               storageWarningShownRef.current = true;
               const usedMB = (usage / (1024 * 1024)).toFixed(1);
-              showToast(`Storage is ${usedMB}MB — approaching browser limit. Export your library and remove old sources to free space.`);
+              const quotaMB = (quota / (1024 * 1024)).toFixed(0);
+              showToast(`Storage is ${usedMB}MB of ~${quotaMB}MB — approaching browser limit. Export your library and remove old sources to free space.`);
             }
-          }
-        } catch (e) {
-          console.error('Failed to save sources to localStorage:', e);
-          if (e.name === 'QuotaExceededError') showToast('Storage full — changes may not persist. Export your library and delete old sources to free space.');
+          }).catch(() => { /* estimate is best-effort */ });
         }
       }, [sources]);
 
       useEffect(() => {
-        try {
-          localStorage.setItem('harkenjot_notes', JSON.stringify(notes));
-        } catch (e) {
-          console.error('Failed to save notes to localStorage:', e);
-          if (e.name === 'QuotaExceededError') showToast('Storage full — notes may not persist. Export your library and delete old sources to free space.');
-        }
+        HJStore.set('notes', notes).catch((e) => {
+          console.error('Failed to save notes:', e);
+          if (e && e.name === 'QuotaExceededError') showToast('Storage full — notes may not persist. Export your library and delete old sources to free space.');
+        });
       }, [notes]);
 
       // Close sidebar when changing tabs
@@ -2612,7 +2700,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.23.4</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.24.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3209,7 +3297,7 @@
           sentencesRef.current = currentSource.sentences || splitIntoSentences(currentSource.content);
 
           // Load saved position for this source
-          const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
+          const savedPositions = HJStore.get('positions') || {};
           const savedPosition = savedPositions[currentSource.id];
           if (savedPosition !== undefined && savedPosition < sentencesRef.current.length) {
             setCurrentSentenceIndex(savedPosition);
@@ -3225,13 +3313,9 @@
       // Save position whenever it changes
       useEffect(() => {
         if (currentSource?.id && content) {
-          try {
-            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
-            savedPositions[currentSource.id] = currentSentenceIndex;
-            localStorage.setItem('harkenjot_positions', JSON.stringify(savedPositions));
-          } catch (e) {
-            console.error('Failed to save position to localStorage:', e);
-          }
+          const savedPositions = HJStore.get('positions') || {};
+          savedPositions[currentSource.id] = currentSentenceIndex;
+          HJStore.set('positions', savedPositions).catch((e) => console.error('Failed to save position:', e));
         }
       }, [currentSentenceIndex, currentSource?.id, content]);
 
@@ -5118,7 +5202,7 @@
           // Restore saved position after audio loads
           setTimeout(() => {
             if (audioPlayerRef.current) {
-              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+              const savedPositions = HJStore.get('media_positions') || {};
               const savedPosition = savedPositions[currentSource.id];
               if (savedPosition) {
                 audioPlayerRef.current.currentTime = savedPosition;
@@ -5207,13 +5291,9 @@
       // Save position whenever it changes (for YouTube, podcast, and X.com timer)
       useEffect(() => {
         if (currentSource?.id && (videoId || podcastAudio || xVideo) && currentTime > 0) {
-          try {
-            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-            savedPositions[currentSource.id] = currentTime;
-            localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
-          } catch (e) {
-            console.error('Failed to save media position to localStorage:', e);
-          }
+          const savedPositions = HJStore.get('media_positions') || {};
+          savedPositions[currentSource.id] = currentTime;
+          HJStore.set('media_positions', savedPositions).catch((e) => console.error('Failed to save media position:', e));
         }
       }, [currentTime, currentSource?.id, videoId, podcastAudio, xVideo]);
 
@@ -5932,11 +6012,9 @@
 
           // Save start timestamp so position restore picks it up
           if (startTime && newSource) {
-            try {
-              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-              savedPositions[newSource.id] = startTime;
-              localStorage.setItem('harkenjot_media_positions', JSON.stringify(savedPositions));
-            } catch (e) { /* Position save is best-effort */ }
+            const savedPositions = HJStore.get('media_positions') || {};
+            savedPositions[newSource.id] = startTime;
+            HJStore.set('media_positions', savedPositions).catch(() => { /* best-effort */ });
           }
 
           setUrl(''); // Clear URL after successful load
@@ -6152,7 +6230,7 @@
           showToast('Audio file re-linked');
           setTimeout(() => {
             if (audioPlayerRef.current) {
-              const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+              const savedPositions = HJStore.get('media_positions') || {};
               const savedPosition = savedPositions[currentSource.id];
               if (savedPosition) {
                 audioPlayerRef.current.currentTime = savedPosition;
@@ -6429,10 +6507,8 @@
         // Look up saved position to pass as start parameter
         let startSeconds = 0;
         if (sourceId) {
-          try {
-            const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-            startSeconds = savedPositions[sourceId] || 0;
-          } catch (e) {}
+          const savedPositions = HJStore.get('media_positions') || {};
+          startSeconds = savedPositions[sourceId] || 0;
         }
 
         playerRef.current = new window.YT.Player('youtube-player', {
@@ -6993,11 +7069,9 @@
                         setDuration(dur);
                         if (currentSource?.id) updateSource(currentSource.id, { duration: dur });
                       }
-                      try {
-                        const savedPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
-                        const savedPosition = savedPositions[currentSource?.id];
-                        if (savedPosition) e.target.currentTime = savedPosition;
-                      } catch (err) { /* ignore */ }
+                      const savedPositions = HJStore.get('media_positions') || {};
+                      const savedPosition = savedPositions[currentSource?.id];
+                      if (savedPosition) e.target.currentTime = savedPosition;
                       if (speed && speed !== 1) e.target.playbackRate = speed;
                     }}
                     onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
@@ -7653,8 +7727,8 @@
 
       const exportLibrary = () => {
         // Include saved positions for articles/PDFs and media
-        const readerPositions = JSON.parse(localStorage.getItem('harkenjot_positions') || '{}');
-        const mediaPositions = JSON.parse(localStorage.getItem('harkenjot_media_positions') || '{}');
+        const readerPositions = HJStore.get('positions') || {};
+        const mediaPositions = HJStore.get('media_positions') || {};
 
         // Strip sentences arrays from sources to reduce export size
         const cleanSources = sources.map(({ sentences, ...rest }) => rest);
@@ -7741,16 +7815,14 @@
                 setNotes(data.notes);
 
                 // Restore saved positions if available (version 2+)
-                try {
-                  if (data.positions) {
-                    if (data.positions.reader) {
-                      localStorage.setItem('harkenjot_positions', JSON.stringify(data.positions.reader));
-                    }
-                    if (data.positions.media) {
-                      localStorage.setItem('harkenjot_media_positions', JSON.stringify(data.positions.media));
-                    }
+                if (data.positions) {
+                  if (data.positions.reader) {
+                    HJStore.set('positions', data.positions.reader).catch(() => {});
                   }
-                } catch (e) { /* Position restore is best-effort */ }
+                  if (data.positions.media) {
+                    HJStore.set('media_positions', data.positions.media).catch(() => {});
+                  }
+                }
 
                 showToast(`Imported ${data.sources.length} sources and ${data.notes.length} notes`);
               }
@@ -8087,8 +8159,12 @@
       );
     }
 
-    // Render the app
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    // Render the app — wait for HJStore to hydrate from IndexedDB (and migrate
+    // from localStorage on first run) so App's useState initializers see the
+    // restored data instead of an empty cache.
+    HJStore.init().finally(() => {
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    });
   </script>
 </body>
 </html>
