@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4450,9 +4450,11 @@
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
       const webSpeechSilenceTimerRef = useRef(null);
+      const intentionalStopRef = useRef(false);
       const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       const stopRecording = () => {
+        intentionalStopRef.current = true;
         if (webSpeechSilenceTimerRef.current) {
           clearTimeout(webSpeechSilenceTimerRef.current);
           webSpeechSilenceTimerRef.current = null;
@@ -4753,9 +4755,14 @@
           let finalTranscript = '';
           let hasResult = false;
           let hadError = false;
+          intentionalStopRef.current = false;
+          const recordingStartedAt = Date.now();
+          const MAX_RECORDING_MS = 60000;
 
-          // Extend pause tolerance: in continuous mode the browser doesn't auto-stop
-          // on silence, so we run a 2.5s timer driven by the API's own speech events.
+          // Extend pause tolerance: Chrome can fire onend after a final result even
+          // with continuous: true, so we (a) only clear the timer on speechstart, not
+          // on every result, and (b) auto-restart in onend unless the stop was
+          // intentional (user click or our own 2.5s silence timer firing).
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -4763,6 +4770,7 @@
             }
             webSpeechSilenceTimerRef.current = setTimeout(() => {
               webSpeechSilenceTimerRef.current = null;
+              intentionalStopRef.current = true;
               try { recognition.stop(); } catch (err) { /* already stopped */ }
             }, SPEECH_END_TIMEOUT);
           };
@@ -4790,7 +4798,6 @@
           };
 
           recognition.onresult = (event) => {
-            clearSilenceTimer();
             hasResult = true;
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -4805,6 +4812,19 @@
           };
 
           recognition.onend = () => {
+            // If neither the user nor our silence timer asked us to stop, Chrome
+            // ended on its own — try to keep the session alive so mid-note pauses
+            // don't terminate the recording.
+            const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
+            if (!intentionalStopRef.current && !hadError && !exceededMax) {
+              try {
+                recognition.start();
+                return;
+              } catch (err) {
+                console.warn('Could not restart recognition; finalizing.', err);
+              }
+            }
+
             clearSilenceTimer();
             console.log('Web Speech recognition ended');
             setIsRecording(false);
@@ -5277,6 +5297,7 @@
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
       const webSpeechSilenceTimerRef = useRef(null);
+      const intentionalStopRef = useRef(false);
       const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       // Load currentSource into player when source is selected from library
@@ -6740,6 +6761,7 @@
       };
 
       const stopRecording = () => {
+        intentionalStopRef.current = true;
         if (webSpeechSilenceTimerRef.current) {
           clearTimeout(webSpeechSilenceTimerRef.current);
           webSpeechSilenceTimerRef.current = null;
@@ -7030,9 +7052,14 @@
           let finalTranscript = '';
           let hasResult = false;
           let hadError = false;
+          intentionalStopRef.current = false;
+          const recordingStartedAt = Date.now();
+          const MAX_RECORDING_MS = 60000;
 
-          // Extend pause tolerance: in continuous mode the browser doesn't auto-stop
-          // on silence, so we run a 2.5s timer driven by the API's own speech events.
+          // Extend pause tolerance: Chrome can fire onend after a final result even
+          // with continuous: true, so we (a) only clear the timer on speechstart, not
+          // on every result, and (b) auto-restart in onend unless the stop was
+          // intentional (user click or our own 2.5s silence timer firing).
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -7040,6 +7067,7 @@
             }
             webSpeechSilenceTimerRef.current = setTimeout(() => {
               webSpeechSilenceTimerRef.current = null;
+              intentionalStopRef.current = true;
               try { recognition.stop(); } catch (err) { /* already stopped */ }
             }, SPEECH_END_TIMEOUT);
           };
@@ -7067,7 +7095,6 @@
           };
 
           recognition.onresult = (event) => {
-            clearSilenceTimer();
             hasResult = true;
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -7082,6 +7109,16 @@
           };
 
           recognition.onend = () => {
+            const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
+            if (!intentionalStopRef.current && !hadError && !exceededMax) {
+              try {
+                recognition.start();
+                return;
+              } catch (err) {
+                console.warn('Could not restart recognition; finalizing.', err);
+              }
+            }
+
             clearSilenceTimer();
             console.log('Web Speech recognition ended (MediaView)');
             setIsRecording(false);
