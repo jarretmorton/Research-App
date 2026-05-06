@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4449,9 +4449,14 @@
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
+      const webSpeechSilenceTimerRef = useRef(null);
       const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       const stopRecording = () => {
+        if (webSpeechSilenceTimerRef.current) {
+          clearTimeout(webSpeechSilenceTimerRef.current);
+          webSpeechSilenceTimerRef.current = null;
+        }
         // Stop Web Speech API recognition or MediaRecorder (Whisper mode)
         if (mediaRecorderRef.current) {
           try {
@@ -4541,7 +4546,7 @@
           let silenceStart = null;
           let hasDetectedSpeech = false;
           const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
-          const SILENCE_DURATION = 1000; // Stop after 1 second of silence
+          const SILENCE_DURATION = 2500; // Stop after 2.5 seconds of silence
           const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
           const recordingStartTime = Date.now();
 
@@ -4578,7 +4583,7 @@
               if (!silenceStart) {
                 silenceStart = Date.now();
               } else if (Date.now() - silenceStart > SILENCE_DURATION) {
-                console.log('Silence detected for 2 seconds, stopping recording');
+                console.log('Silence detected, stopping recording');
                 mediaRecorderRef.current.stop();
                 return;
               }
@@ -4740,7 +4745,7 @@
         // Try Web Speech API (primary)
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: false,
+            continuous: true,
             interimResults: true,
             lang: 'en-US'
           });
@@ -4748,6 +4753,25 @@
           let finalTranscript = '';
           let hasResult = false;
           let hadError = false;
+
+          // Extend pause tolerance: in continuous mode the browser doesn't auto-stop
+          // on silence, so we run a 2.5s timer driven by the API's own speech events.
+          const SPEECH_END_TIMEOUT = 2500;
+          const armSilenceTimer = () => {
+            if (webSpeechSilenceTimerRef.current) {
+              clearTimeout(webSpeechSilenceTimerRef.current);
+            }
+            webSpeechSilenceTimerRef.current = setTimeout(() => {
+              webSpeechSilenceTimerRef.current = null;
+              try { recognition.stop(); } catch (err) { /* already stopped */ }
+            }, SPEECH_END_TIMEOUT);
+          };
+          const clearSilenceTimer = () => {
+            if (webSpeechSilenceTimerRef.current) {
+              clearTimeout(webSpeechSilenceTimerRef.current);
+              webSpeechSilenceTimerRef.current = null;
+            }
+          };
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
@@ -4757,7 +4781,16 @@
             showToast('Listening...');
           };
 
+          recognition.onspeechstart = () => {
+            clearSilenceTimer();
+          };
+
+          recognition.onspeechend = () => {
+            armSilenceTimer();
+          };
+
           recognition.onresult = (event) => {
+            clearSilenceTimer();
             hasResult = true;
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -4772,6 +4805,7 @@
           };
 
           recognition.onend = () => {
+            clearSilenceTimer();
             console.log('Web Speech recognition ended');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
@@ -4809,6 +4843,7 @@
           };
 
           recognition.onerror = (event) => {
+            clearSilenceTimer();
             console.error('Speech recognition error:', event.error);
             hadError = true;
             setIsRecording(false);
@@ -5241,6 +5276,7 @@
       const audioContextRef = useRef(null);
       const analyzerRef = useRef(null);
       const silenceTimeoutRef = useRef(null);
+      const webSpeechSilenceTimerRef = useRef(null);
       const isProcessing = isRecording || isTranscribing || whisperLoading;
 
       // Load currentSource into player when source is selected from library
@@ -6704,6 +6740,10 @@
       };
 
       const stopRecording = () => {
+        if (webSpeechSilenceTimerRef.current) {
+          clearTimeout(webSpeechSilenceTimerRef.current);
+          webSpeechSilenceTimerRef.current = null;
+        }
         if (mediaRecorderRef.current) {
           try {
             playSound('stop');
@@ -6789,7 +6829,7 @@
           let silenceStart = null;
           let hasDetectedSpeech = false;
           const SILENCE_THRESHOLD = 15; // Audio level below this is considered silence
-          const SILENCE_DURATION = 1000; // Stop after 1 second of silence
+          const SILENCE_DURATION = 2500; // Stop after 2.5 seconds of silence
           const MAX_RECORDING_TIME = 60000; // Maximum 60 seconds
           const recordingStartTime = Date.now();
 
@@ -6826,7 +6866,7 @@
               if (!silenceStart) {
                 silenceStart = Date.now();
               } else if (Date.now() - silenceStart > SILENCE_DURATION) {
-                console.log('Silence detected for 2 seconds, stopping recording');
+                console.log('Silence detected, stopping recording');
                 mediaRecorderRef.current.stop();
                 return;
               }
@@ -6982,7 +7022,7 @@
         // Try Web Speech API (primary)
         try {
           const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: false,
+            continuous: true,
             interimResults: true,
             lang: 'en-US'
           });
@@ -6990,6 +7030,25 @@
           let finalTranscript = '';
           let hasResult = false;
           let hadError = false;
+
+          // Extend pause tolerance: in continuous mode the browser doesn't auto-stop
+          // on silence, so we run a 2.5s timer driven by the API's own speech events.
+          const SPEECH_END_TIMEOUT = 2500;
+          const armSilenceTimer = () => {
+            if (webSpeechSilenceTimerRef.current) {
+              clearTimeout(webSpeechSilenceTimerRef.current);
+            }
+            webSpeechSilenceTimerRef.current = setTimeout(() => {
+              webSpeechSilenceTimerRef.current = null;
+              try { recognition.stop(); } catch (err) { /* already stopped */ }
+            }, SPEECH_END_TIMEOUT);
+          };
+          const clearSilenceTimer = () => {
+            if (webSpeechSilenceTimerRef.current) {
+              clearTimeout(webSpeechSilenceTimerRef.current);
+              webSpeechSilenceTimerRef.current = null;
+            }
+          };
 
           recognition.onstart = () => {
             console.log('Web Speech recognition started (MediaView)');
@@ -6999,7 +7058,16 @@
             showToast('Listening...');
           };
 
+          recognition.onspeechstart = () => {
+            clearSilenceTimer();
+          };
+
+          recognition.onspeechend = () => {
+            armSilenceTimer();
+          };
+
           recognition.onresult = (event) => {
+            clearSilenceTimer();
             hasResult = true;
             let interimTranscript = '';
             for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -7014,6 +7082,7 @@
           };
 
           recognition.onend = () => {
+            clearSilenceTimer();
             console.log('Web Speech recognition ended (MediaView)');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
@@ -7050,6 +7119,7 @@
           };
 
           recognition.onerror = (event) => {
+            clearSilenceTimer();
             console.error('Speech recognition error:', event.error);
             hadError = true;
             setIsRecording(false);
