@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.3</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4785,6 +4785,30 @@
             }
           };
 
+          // Dedupe across auto-restarted sessions. Chrome reprocesses overlapping
+          // audio after each restart and re-emits content from earlier sessions
+          // (e.g. session 2's first final is again "testing"). Treat each new
+          // session's final as a candidate to extend what we already have:
+          // keep the longer prefix-match, otherwise append as new content.
+          const appendSession = () => {
+            const trimmedSession = currentSessionFinal.trim();
+            if (!trimmedSession) {
+              currentSessionFinal = '';
+              return;
+            }
+            const trimmedCommitted = committedFinalTranscript.trim();
+            if (!trimmedCommitted) {
+              committedFinalTranscript = currentSessionFinal;
+            } else if (trimmedSession.startsWith(trimmedCommitted)) {
+              committedFinalTranscript = currentSessionFinal;
+            } else if (trimmedCommitted.startsWith(trimmedSession)) {
+              // already have a superset — drop this session's final
+            } else {
+              committedFinalTranscript = committedFinalTranscript.replace(/\s+$/, '') + ' ' + currentSessionFinal.replace(/^\s+/, '');
+            }
+            currentSessionFinal = '';
+          };
+
           recognition.onstart = () => {
             console.log('Web Speech recognition started');
             setIsRecording(true);
@@ -4829,8 +4853,7 @@
             // don't terminate the recording.
             const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
             if (!intentionalStopRef.current && !hadError && !exceededMax) {
-              committedFinalTranscript += currentSessionFinal;
-              currentSessionFinal = '';
+              appendSession();
               try {
                 recognition.start();
                 return;
@@ -4844,7 +4867,8 @@
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
-            const finalTranscript = committedFinalTranscript + currentSessionFinal;
+            appendSession();
+            const finalTranscript = committedFinalTranscript;
 
             if (hadError) {
               console.log('Skipping onend message - error already handled');
@@ -7098,6 +7122,30 @@
             }
           };
 
+          // Dedupe across auto-restarted sessions. Chrome reprocesses overlapping
+          // audio after each restart and re-emits content from earlier sessions
+          // (e.g. session 2's first final is again "testing"). Treat each new
+          // session's final as a candidate to extend what we already have:
+          // keep the longer prefix-match, otherwise append as new content.
+          const appendSession = () => {
+            const trimmedSession = currentSessionFinal.trim();
+            if (!trimmedSession) {
+              currentSessionFinal = '';
+              return;
+            }
+            const trimmedCommitted = committedFinalTranscript.trim();
+            if (!trimmedCommitted) {
+              committedFinalTranscript = currentSessionFinal;
+            } else if (trimmedSession.startsWith(trimmedCommitted)) {
+              committedFinalTranscript = currentSessionFinal;
+            } else if (trimmedCommitted.startsWith(trimmedSession)) {
+              // already have a superset — drop this session's final
+            } else {
+              committedFinalTranscript = committedFinalTranscript.replace(/\s+$/, '') + ' ' + currentSessionFinal.replace(/^\s+/, '');
+            }
+            currentSessionFinal = '';
+          };
+
           recognition.onstart = () => {
             console.log('Web Speech recognition started (MediaView)');
             setIsRecording(true);
@@ -7139,8 +7187,7 @@
           recognition.onend = () => {
             const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
             if (!intentionalStopRef.current && !hadError && !exceededMax) {
-              committedFinalTranscript += currentSessionFinal;
-              currentSessionFinal = '';
+              appendSession();
               try {
                 recognition.start();
                 return;
@@ -7154,7 +7201,8 @@
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
-            const finalTranscript = committedFinalTranscript + currentSessionFinal;
+            appendSession();
+            const finalTranscript = committedFinalTranscript;
 
             if (hadError) {
               console.log('Skipping onend message - error already handled');
