@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4752,9 +4752,11 @@
             lang: 'en-US'
           });
 
-          let finalTranscript = '';
+          let committedFinalTranscript = '';
+          let currentSessionFinal = '';
           let hasResult = false;
           let hadError = false;
+          let isFirstStart = true;
           intentionalStopRef.current = false;
           const recordingStartedAt = Date.now();
           const MAX_RECORDING_MS = 60000;
@@ -4762,7 +4764,9 @@
           // Extend pause tolerance: Chrome can fire onend after a final result even
           // with continuous: true, so we (a) only clear the timer on speechstart, not
           // on every result, and (b) auto-restart in onend unless the stop was
-          // intentional (user click or our own 2.5s silence timer firing).
+          // intentional (user click or our own 2.5s silence timer firing). Across
+          // restarts we commit each session's final transcript so they don't get
+          // re-emitted as Chrome keeps stale results in event.results.
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -4785,8 +4789,11 @@
             console.log('Web Speech recognition started');
             setIsRecording(true);
             isStartingRecordingRef.current = false;
-            playSound('start');
-            showToast('Listening...');
+            if (isFirstStart) {
+              playSound('start');
+              showToast('Listening...');
+              isFirstStart = false;
+            }
           };
 
           recognition.onspeechstart = () => {
@@ -4799,16 +4806,21 @@
 
           recognition.onresult = (event) => {
             hasResult = true;
+            // Rebuild the session-final and interim from scratch each time. Chrome
+            // keeps prior finals in event.results, so appending on every event
+            // duplicates text. resultIndex is unreliable across restarts.
+            let sessionFinal = '';
             let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
+            for (let i = 0; i < event.results.length; i++) {
               const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
-                finalTranscript += transcript;
+                sessionFinal += transcript;
               } else {
                 interimTranscript += transcript;
               }
             }
-            console.log('Interim:', interimTranscript, 'Final:', finalTranscript);
+            currentSessionFinal = sessionFinal;
+            console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
           };
 
           recognition.onend = () => {
@@ -4817,6 +4829,8 @@
             // don't terminate the recording.
             const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
             if (!intentionalStopRef.current && !hadError && !exceededMax) {
+              committedFinalTranscript += currentSessionFinal;
+              currentSessionFinal = '';
               try {
                 recognition.start();
                 return;
@@ -4829,6 +4843,8 @@
             console.log('Web Speech recognition ended');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
+
+            const finalTranscript = committedFinalTranscript + currentSessionFinal;
 
             if (hadError) {
               console.log('Skipping onend message - error already handled');
@@ -7049,9 +7065,11 @@
             lang: 'en-US'
           });
 
-          let finalTranscript = '';
+          let committedFinalTranscript = '';
+          let currentSessionFinal = '';
           let hasResult = false;
           let hadError = false;
+          let isFirstStart = true;
           intentionalStopRef.current = false;
           const recordingStartedAt = Date.now();
           const MAX_RECORDING_MS = 60000;
@@ -7059,7 +7077,9 @@
           // Extend pause tolerance: Chrome can fire onend after a final result even
           // with continuous: true, so we (a) only clear the timer on speechstart, not
           // on every result, and (b) auto-restart in onend unless the stop was
-          // intentional (user click or our own 2.5s silence timer firing).
+          // intentional (user click or our own 2.5s silence timer firing). Across
+          // restarts we commit each session's final transcript so they don't get
+          // re-emitted as Chrome keeps stale results in event.results.
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -7082,8 +7102,11 @@
             console.log('Web Speech recognition started (MediaView)');
             setIsRecording(true);
             isStartingRecordingRef.current = false;
-            playSound('start');
-            showToast('Listening...');
+            if (isFirstStart) {
+              playSound('start');
+              showToast('Listening...');
+              isFirstStart = false;
+            }
           };
 
           recognition.onspeechstart = () => {
@@ -7096,21 +7119,28 @@
 
           recognition.onresult = (event) => {
             hasResult = true;
+            // Rebuild the session-final and interim from scratch each time. Chrome
+            // keeps prior finals in event.results, so appending on every event
+            // duplicates text. resultIndex is unreliable across restarts.
+            let sessionFinal = '';
             let interimTranscript = '';
-            for (let i = event.resultIndex; i < event.results.length; i++) {
+            for (let i = 0; i < event.results.length; i++) {
               const transcript = event.results[i][0].transcript;
               if (event.results[i].isFinal) {
-                finalTranscript += transcript;
+                sessionFinal += transcript;
               } else {
                 interimTranscript += transcript;
               }
             }
-            console.log('Interim:', interimTranscript, 'Final:', finalTranscript);
+            currentSessionFinal = sessionFinal;
+            console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
           };
 
           recognition.onend = () => {
             const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
             if (!intentionalStopRef.current && !hadError && !exceededMax) {
+              committedFinalTranscript += currentSessionFinal;
+              currentSessionFinal = '';
               try {
                 recognition.start();
                 return;
@@ -7123,6 +7153,8 @@
             console.log('Web Speech recognition ended (MediaView)');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
+
+            const finalTranscript = committedFinalTranscript + currentSessionFinal;
 
             if (hadError) {
               console.log('Skipping onend message - error already handled');
