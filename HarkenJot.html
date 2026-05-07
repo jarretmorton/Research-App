@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.3</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.4</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4746,27 +4746,22 @@
 
         // Try Web Speech API (primary)
         try {
-          const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: true,
-            interimResults: true,
-            lang: 'en-US'
-          });
-
           let committedFinalTranscript = '';
           let currentSessionFinal = '';
           let hasResult = false;
           let hadError = false;
           let isFirstStart = true;
+          let currentRecognition = null;
           intentionalStopRef.current = false;
           const recordingStartedAt = Date.now();
           const MAX_RECORDING_MS = 60000;
 
           // Extend pause tolerance: Chrome can fire onend after a final result even
-          // with continuous: true, so we (a) only clear the timer on speechstart, not
-          // on every result, and (b) auto-restart in onend unless the stop was
-          // intentional (user click or our own 2.5s silence timer firing). Across
-          // restarts we commit each session's final transcript so they don't get
-          // re-emitted as Chrome keeps stale results in event.results.
+          // with continuous: true. We restart by creating a FRESH recognition
+          // instance every time — calling .start() on the same instance after onend
+          // causes Chrome to retain prior finals in event.results and re-emit them
+          // (producing 'testingtestingtesting...' duplicates). A new instance gets
+          // a clean event.results.
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -4775,7 +4770,9 @@
             webSpeechSilenceTimerRef.current = setTimeout(() => {
               webSpeechSilenceTimerRef.current = null;
               intentionalStopRef.current = true;
-              try { recognition.stop(); } catch (err) { /* already stopped */ }
+              if (currentRecognition) {
+                try { currentRecognition.stop(); } catch (err) { /* already stopped */ }
+              }
             }, SPEECH_END_TIMEOUT);
           };
           const clearSilenceTimer = () => {
@@ -4785,11 +4782,10 @@
             }
           };
 
-          // Dedupe across auto-restarted sessions. Chrome reprocesses overlapping
-          // audio after each restart and re-emits content from earlier sessions
-          // (e.g. session 2's first final is again "testing"). Treat each new
-          // session's final as a candidate to extend what we already have:
-          // keep the longer prefix-match, otherwise append as new content.
+          // Each fresh session may still capture a prefix-extension of what the
+          // previous session committed (e.g. session N+1 picked up "testing 1 2"
+          // while session N had only committed "testing"). Keep the longer
+          // prefix-match; otherwise treat as new content and join with a space.
           const appendSession = () => {
             const trimmedSession = currentSessionFinal.trim();
             if (!trimmedSession) {
@@ -4809,61 +4805,9 @@
             currentSessionFinal = '';
           };
 
-          recognition.onstart = () => {
-            console.log('Web Speech recognition started');
-            setIsRecording(true);
-            isStartingRecordingRef.current = false;
-            if (isFirstStart) {
-              playSound('start');
-              showToast('Listening...');
-              isFirstStart = false;
-            }
-          };
-
-          recognition.onspeechstart = () => {
+          const finalizeRecording = () => {
             clearSilenceTimer();
-          };
-
-          recognition.onspeechend = () => {
-            armSilenceTimer();
-          };
-
-          recognition.onresult = (event) => {
-            hasResult = true;
-            // Rebuild the session-final and interim from scratch each time. Chrome
-            // keeps prior finals in event.results, so appending on every event
-            // duplicates text. resultIndex is unreliable across restarts.
-            let sessionFinal = '';
-            let interimTranscript = '';
-            for (let i = 0; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript;
-              if (event.results[i].isFinal) {
-                sessionFinal += transcript;
-              } else {
-                interimTranscript += transcript;
-              }
-            }
-            currentSessionFinal = sessionFinal;
-            console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
-          };
-
-          recognition.onend = () => {
-            // If neither the user nor our silence timer asked us to stop, Chrome
-            // ended on its own — try to keep the session alive so mid-note pauses
-            // don't terminate the recording.
-            const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
-            if (!intentionalStopRef.current && !hadError && !exceededMax) {
-              appendSession();
-              try {
-                recognition.start();
-                return;
-              } catch (err) {
-                console.warn('Could not restart recognition; finalizing.', err);
-              }
-            }
-
-            clearSilenceTimer();
-            console.log('Web Speech recognition ended');
+            console.log('Web Speech recording finalized');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
@@ -4902,48 +4846,110 @@
             }
           };
 
-          recognition.onerror = (event) => {
-            clearSilenceTimer();
-            console.error('Speech recognition error:', event.error);
-            hadError = true;
-            setIsRecording(false);
-            isStartingRecordingRef.current = false;
+          const createSession = () => {
+            const recognition = window.WebSpeechAPI.createRecognition({
+              continuous: true,
+              interimResults: true,
+              lang: 'en-US'
+            });
 
-            if (event.error === 'network') {
-              // Network error - offer Whisper fallback
-              window.WebSpeechAPI.markNetworkError();
-              playSound('error');
-              showToast('Network error - switching to offline mode...');
-              // Automatically try to load Whisper and retry
-              loadWhisperModel().then(success => {
-                if (success) {
-                  showToast('Offline mode ready! Try recording again.');
+            recognition.onstart = () => {
+              console.log('Web Speech recognition session started');
+              setIsRecording(true);
+              isStartingRecordingRef.current = false;
+              if (isFirstStart) {
+                playSound('start');
+                showToast('Listening...');
+                isFirstStart = false;
+              }
+            };
+
+            recognition.onspeechstart = () => {
+              clearSilenceTimer();
+            };
+
+            recognition.onspeechend = () => {
+              armSilenceTimer();
+            };
+
+            recognition.onresult = (event) => {
+              hasResult = true;
+              let sessionFinal = '';
+              let interimTranscript = '';
+              for (let i = 0; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                  sessionFinal += transcript;
+                } else {
+                  interimTranscript += transcript;
                 }
-              });
-            } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-              playSound('error');
-              showToast('Microphone access denied');
-            } else if (event.error === 'no-speech') {
-              playSound('error');
-              showToast('No speech detected - try again');
-            } else if (event.error === 'aborted') {
-              playSound('error');
-              showToast('Speech recognition interrupted. Try again.');
-            } else if (event.error === 'audio-capture') {
-              playSound('error');
-              showToast('No microphone found. Check your audio settings.');
-            } else {
-              playSound('error');
-              showToast(`Speech recognition error: ${event.error}`);
-            }
+              }
+              currentSessionFinal = sessionFinal;
+              console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
+            };
 
-            if (wasPlaying && speakFromIndexRef.current) {
-              setTimeout(() => speakFromIndexRef.current(notePosition), 300);
-            }
+            recognition.onend = () => {
+              const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
+              if (!intentionalStopRef.current && !hadError && !exceededMax) {
+                appendSession();
+                try {
+                  currentRecognition = createSession();
+                  mediaRecorderRef.current = currentRecognition;
+                  currentRecognition.start();
+                  return;
+                } catch (err) {
+                  console.warn('Could not start fresh recognition; finalizing.', err);
+                }
+              }
+              finalizeRecording();
+            };
+
+            recognition.onerror = (event) => {
+              clearSilenceTimer();
+              console.error('Speech recognition error:', event.error);
+              hadError = true;
+              setIsRecording(false);
+              isStartingRecordingRef.current = false;
+
+              if (event.error === 'network') {
+                // Network error - offer Whisper fallback
+                window.WebSpeechAPI.markNetworkError();
+                playSound('error');
+                showToast('Network error - switching to offline mode...');
+                // Automatically try to load Whisper and retry
+                loadWhisperModel().then(success => {
+                  if (success) {
+                    showToast('Offline mode ready! Try recording again.');
+                  }
+                });
+              } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                playSound('error');
+                showToast('Microphone access denied');
+              } else if (event.error === 'no-speech') {
+                playSound('error');
+                showToast('No speech detected - try again');
+              } else if (event.error === 'aborted') {
+                playSound('error');
+                showToast('Speech recognition interrupted. Try again.');
+              } else if (event.error === 'audio-capture') {
+                playSound('error');
+                showToast('No microphone found. Check your audio settings.');
+              } else {
+                playSound('error');
+                showToast(`Speech recognition error: ${event.error}`);
+              }
+
+              if (wasPlaying && speakFromIndexRef.current) {
+                setTimeout(() => speakFromIndexRef.current(notePosition), 300);
+              }
+            };
+
+            return recognition;
           };
 
-          mediaRecorderRef.current = recognition;
-          recognition.start();
+          currentRecognition = createSession();
+          mediaRecorderRef.current = currentRecognition;
+          currentRecognition.start();
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
           playSound('error');
@@ -7083,27 +7089,22 @@
 
         // Try Web Speech API (primary)
         try {
-          const recognition = window.WebSpeechAPI.createRecognition({
-            continuous: true,
-            interimResults: true,
-            lang: 'en-US'
-          });
-
           let committedFinalTranscript = '';
           let currentSessionFinal = '';
           let hasResult = false;
           let hadError = false;
           let isFirstStart = true;
+          let currentRecognition = null;
           intentionalStopRef.current = false;
           const recordingStartedAt = Date.now();
           const MAX_RECORDING_MS = 60000;
 
           // Extend pause tolerance: Chrome can fire onend after a final result even
-          // with continuous: true, so we (a) only clear the timer on speechstart, not
-          // on every result, and (b) auto-restart in onend unless the stop was
-          // intentional (user click or our own 2.5s silence timer firing). Across
-          // restarts we commit each session's final transcript so they don't get
-          // re-emitted as Chrome keeps stale results in event.results.
+          // with continuous: true. We restart by creating a FRESH recognition
+          // instance every time — calling .start() on the same instance after onend
+          // causes Chrome to retain prior finals in event.results and re-emit them
+          // (producing 'testingtestingtesting...' duplicates). A new instance gets
+          // a clean event.results.
           const SPEECH_END_TIMEOUT = 2500;
           const armSilenceTimer = () => {
             if (webSpeechSilenceTimerRef.current) {
@@ -7112,7 +7113,9 @@
             webSpeechSilenceTimerRef.current = setTimeout(() => {
               webSpeechSilenceTimerRef.current = null;
               intentionalStopRef.current = true;
-              try { recognition.stop(); } catch (err) { /* already stopped */ }
+              if (currentRecognition) {
+                try { currentRecognition.stop(); } catch (err) { /* already stopped */ }
+              }
             }, SPEECH_END_TIMEOUT);
           };
           const clearSilenceTimer = () => {
@@ -7122,11 +7125,9 @@
             }
           };
 
-          // Dedupe across auto-restarted sessions. Chrome reprocesses overlapping
-          // audio after each restart and re-emits content from earlier sessions
-          // (e.g. session 2's first final is again "testing"). Treat each new
-          // session's final as a candidate to extend what we already have:
-          // keep the longer prefix-match, otherwise append as new content.
+          // Each fresh session may still capture a prefix-extension of what the
+          // previous session committed. Keep the longer prefix-match; otherwise
+          // treat as new content and join with a space.
           const appendSession = () => {
             const trimmedSession = currentSessionFinal.trim();
             if (!trimmedSession) {
@@ -7146,58 +7147,9 @@
             currentSessionFinal = '';
           };
 
-          recognition.onstart = () => {
-            console.log('Web Speech recognition started (MediaView)');
-            setIsRecording(true);
-            isStartingRecordingRef.current = false;
-            if (isFirstStart) {
-              playSound('start');
-              showToast('Listening...');
-              isFirstStart = false;
-            }
-          };
-
-          recognition.onspeechstart = () => {
+          const finalizeRecording = () => {
             clearSilenceTimer();
-          };
-
-          recognition.onspeechend = () => {
-            armSilenceTimer();
-          };
-
-          recognition.onresult = (event) => {
-            hasResult = true;
-            // Rebuild the session-final and interim from scratch each time. Chrome
-            // keeps prior finals in event.results, so appending on every event
-            // duplicates text. resultIndex is unreliable across restarts.
-            let sessionFinal = '';
-            let interimTranscript = '';
-            for (let i = 0; i < event.results.length; i++) {
-              const transcript = event.results[i][0].transcript;
-              if (event.results[i].isFinal) {
-                sessionFinal += transcript;
-              } else {
-                interimTranscript += transcript;
-              }
-            }
-            currentSessionFinal = sessionFinal;
-            console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
-          };
-
-          recognition.onend = () => {
-            const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
-            if (!intentionalStopRef.current && !hadError && !exceededMax) {
-              appendSession();
-              try {
-                recognition.start();
-                return;
-              } catch (err) {
-                console.warn('Could not restart recognition; finalizing.', err);
-              }
-            }
-
-            clearSilenceTimer();
-            console.log('Web Speech recognition ended (MediaView)');
+            console.log('Web Speech recording finalized (MediaView)');
             setIsRecording(false);
             isStartingRecordingRef.current = false;
 
@@ -7235,56 +7187,116 @@
             }
           };
 
-          recognition.onerror = (event) => {
-            clearSilenceTimer();
-            console.error('Speech recognition error:', event.error);
-            hadError = true;
-            setIsRecording(false);
-            isStartingRecordingRef.current = false;
+          const createSession = () => {
+            const recognition = window.WebSpeechAPI.createRecognition({
+              continuous: true,
+              interimResults: true,
+              lang: 'en-US'
+            });
 
-            if (event.error === 'network') {
-              window.WebSpeechAPI.markNetworkError();
-              playSound('error');
-              showToast('Network error - switching to offline mode...');
-              loadWhisperModel().then(success => {
-                if (success) {
-                  showToast('Offline mode ready! Try recording again.');
+            recognition.onstart = () => {
+              console.log('Web Speech recognition session started (MediaView)');
+              setIsRecording(true);
+              isStartingRecordingRef.current = false;
+              if (isFirstStart) {
+                playSound('start');
+                showToast('Listening...');
+                isFirstStart = false;
+              }
+            };
+
+            recognition.onspeechstart = () => {
+              clearSilenceTimer();
+            };
+
+            recognition.onspeechend = () => {
+              armSilenceTimer();
+            };
+
+            recognition.onresult = (event) => {
+              hasResult = true;
+              let sessionFinal = '';
+              let interimTranscript = '';
+              for (let i = 0; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                  sessionFinal += transcript;
+                } else {
+                  interimTranscript += transcript;
                 }
-              });
-            } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
-              playSound('error');
-              showToast('Microphone access denied');
-            } else if (event.error === 'no-speech') {
-              playSound('error');
-              showToast('No speech detected - try again');
-            } else if (event.error === 'aborted') {
-              playSound('error');
-              showToast('Speech recognition interrupted. Try again.');
-            } else if (event.error === 'audio-capture') {
-              playSound('error');
-              showToast('No microphone found. Check your audio settings.');
-            } else {
-              playSound('error');
-              showToast(`Speech recognition error: ${event.error}`);
-            }
+              }
+              currentSessionFinal = sessionFinal;
+              console.log('Interim:', interimTranscript, 'Session final:', sessionFinal, 'Committed:', committedFinalTranscript);
+            };
 
-            // Resume playback even on error (use local variable from closure)
-            if (wasPlaying) {
-              if (audioPlayerRef.current) {
-                audioPlayerRef.current.play();
-                requestWakeLock();
+            recognition.onend = () => {
+              const exceededMax = Date.now() - recordingStartedAt > MAX_RECORDING_MS;
+              if (!intentionalStopRef.current && !hadError && !exceededMax) {
+                appendSession();
+                try {
+                  currentRecognition = createSession();
+                  mediaRecorderRef.current = currentRecognition;
+                  currentRecognition.start();
+                  return;
+                } catch (err) {
+                  console.warn('Could not start fresh recognition; finalizing.', err);
+                }
               }
-              if (playerRef.current) {
-                playerRef.current.playVideo();
+              finalizeRecording();
+            };
+
+            recognition.onerror = (event) => {
+              clearSilenceTimer();
+              console.error('Speech recognition error:', event.error);
+              hadError = true;
+              setIsRecording(false);
+              isStartingRecordingRef.current = false;
+
+              if (event.error === 'network') {
+                window.WebSpeechAPI.markNetworkError();
+                playSound('error');
+                showToast('Network error - switching to offline mode...');
+                loadWhisperModel().then(success => {
+                  if (success) {
+                    showToast('Offline mode ready! Try recording again.');
+                  }
+                });
+              } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+                playSound('error');
+                showToast('Microphone access denied');
+              } else if (event.error === 'no-speech') {
+                playSound('error');
+                showToast('No speech detected - try again');
+              } else if (event.error === 'aborted') {
+                playSound('error');
+                showToast('Speech recognition interrupted. Try again.');
+              } else if (event.error === 'audio-capture') {
+                playSound('error');
+                showToast('No microphone found. Check your audio settings.');
+              } else {
+                playSound('error');
+                showToast(`Speech recognition error: ${event.error}`);
               }
-            }
+
+              // Resume playback even on error (use local variable from closure)
+              if (wasPlaying) {
+                if (audioPlayerRef.current) {
+                  audioPlayerRef.current.play();
+                  requestWakeLock();
+                }
+                if (playerRef.current) {
+                  playerRef.current.playVideo();
+                }
+              }
+            };
+
+            return recognition;
           };
 
-          // Store recognition instance for stopRecording
-          mediaRecorderRef.current = recognition;
-
+          currentRecognition = createSession();
+          mediaRecorderRef.current = currentRecognition;
           console.log('Starting speech recognition...');
-          recognition.start();
+          currentRecognition.start();
           console.log('Speech recognition start() called');
         } catch (error) {
           console.error('Failed to start speech recognition:', error);
