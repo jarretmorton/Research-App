@@ -2710,7 +2710,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5643,10 +5643,25 @@
         return null;
       };
 
+      // Strip Spotify share/tracking tokens (?si=, utm_*, context) which can
+      // cause oEmbed and CORS-proxy-fetched scrapes to 401/redirect for some
+      // podcasts (notably Latent Space).
+      const cleanSpotifyUrl = (rawUrl) => {
+        try {
+          const u = new URL(rawUrl);
+          const drop = ['si', 'context', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'go', 'nd'];
+          drop.forEach(k => u.searchParams.delete(k));
+          return u.toString();
+        } catch (e) {
+          return rawUrl;
+        }
+      };
+
       // Fetch Spotify metadata using oEmbed API
       const fetchSpotifyMetadata = async (spotifyUrl) => {
         try {
-          const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(spotifyUrl)}`;
+          const cleanUrl = cleanSpotifyUrl(spotifyUrl);
+          const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(cleanUrl)}`;
           const response = await fetch(oembedUrl);
           if (!response.ok) throw new Error('Failed to fetch Spotify metadata');
           const data = await response.json();
@@ -5689,6 +5704,7 @@
       // JSON-LD with `partOfSeries.name` (the show) and `name` (the episode),
       // which is far more reliable. Falls back to og:description parsing.
       const fetchSpotifyPageMetadata = async (spotifyUrl) => {
+        const cleanUrl = cleanSpotifyUrl(spotifyUrl);
         const proxies = [
           (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
           (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
@@ -5696,9 +5712,10 @@
           (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`
         ];
 
+        let bestResult = null;
         for (let i = 0; i < proxies.length; i++) {
           try {
-            const response = await fetch(proxies[i](spotifyUrl));
+            const response = await fetch(proxies[i](cleanUrl));
             if (!response.ok) continue;
             let html = await response.text();
             // allorigins/get returns JSON {contents}
@@ -5746,26 +5763,73 @@
                 m = desc.match(/Episode[^·]*·\s*([^·]+?)\s*(?:·|$)/i);
                 if (m) showName = m[1].trim();
               }
+              // "<SHOW> · Episode" or "<SHOW> · Podcast"
+              if (!showName) {
+                m = desc.match(/^([^·]+?)\s*·\s*(?:Episode|Podcast)/i);
+                if (m) showName = m[1].trim();
+              }
             }
 
-            if (showName || episodeTitle) {
+            // Last-resort: parse <title> tag, often "Episode — Show | Podcast on Spotify"
+            if (!showName) {
+              const titleText = doc.querySelector('title')?.textContent || '';
+              // Strip trailing " | Podcast on Spotify" / " - Spotify" suffixes
+              const cleaned = titleText.replace(/\s*[\|·]\s*Podcast on Spotify\s*$/i, '')
+                                       .replace(/\s*[-–—]\s*Spotify\s*$/i, '')
+                                       .trim();
+              for (const sep of [' — ', ' – ', ' - ', ' | ']) {
+                if (cleaned.includes(sep)) {
+                  const parts = cleaned.split(sep);
+                  if (parts.length >= 2) {
+                    if (!episodeTitle) episodeTitle = parts[0].trim();
+                    showName = parts.slice(1).join(sep).trim();
+                  }
+                  break;
+                }
+              }
+            }
+
+            console.log('[Spotify scrape]', { proxy: i, episodeTitle, showName });
+
+            if (showName && episodeTitle) {
               return { episodeTitle, showName };
+            }
+            // Track partial result; keep trying proxies in case a later one has both fields
+            if ((episodeTitle || showName) && !bestResult) {
+              bestResult = { episodeTitle, showName };
+            } else if (bestResult) {
+              bestResult = {
+                episodeTitle: bestResult.episodeTitle || episodeTitle,
+                showName: bestResult.showName || showName
+              };
+              if (bestResult.episodeTitle && bestResult.showName) return bestResult;
             }
           } catch (e) { continue; }
         }
-        return null;
+        return bestResult;
       };
 
       // Search for RSS feed using podcast name
       const searchForRSSFeed = async (showName, episodeTitle) => {
         const normalizeForMatch = (t) => t.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 
+        // Build candidate show-name queries: full name, name before colon (subtitle drop),
+        // and a token-rich short version. Helps when oEmbed gives an over-decorated name.
+        const showCandidates = [];
+        if (showName) {
+          showCandidates.push(showName);
+          if (showName.includes(':')) showCandidates.push(showName.split(':')[0].trim());
+          const stripped = showName.replace(/\b(podcast|the\s+ai\s+engineer)\b/gi, '').replace(/\s+/g, ' ').trim();
+          if (stripped && stripped !== showName) showCandidates.push(stripped);
+        }
+        const showNorm = showName ? normalizeForMatch(showName) : '';
+
         try {
           // Strategy 1: Search iTunes for the episode directly (most reliable)
           if (episodeTitle) {
             try {
               const episodeQuery = encodeURIComponent(episodeTitle);
-              const episodeResponse = await fetch(`https://itunes.apple.com/search?term=${episodeQuery}&entity=podcastEpisode&limit=10`);
+              const episodeResponse = await fetch(`https://itunes.apple.com/search?term=${episodeQuery}&entity=podcastEpisode&limit=15`);
               if (episodeResponse.ok) {
                 const episodeData = await episodeResponse.json();
                 if (episodeData.results && episodeData.results.length > 0) {
@@ -5776,6 +5840,7 @@
                   for (const result of episodeData.results) {
                     if (!result.feedUrl) continue;
                     const resultNorm = normalizeForMatch(result.trackName || '');
+                    const collectionNorm = normalizeForMatch(result.collectionName || '');
                     let score = 0;
                     if (resultNorm === targetNorm) score = 100;
                     else if (resultNorm.includes(targetNorm) || targetNorm.includes(resultNorm)) score = 80;
@@ -5785,13 +5850,21 @@
                         if (resultNorm.includes(word)) score += 10;
                       });
                     }
+                    // Boost when the result's podcast matches the show name we have
+                    if (showNorm) {
+                      if (collectionNorm === showNorm) score += 30;
+                      else if (collectionNorm.includes(showNorm) || showNorm.includes(collectionNorm)) score += 20;
+                    }
                     if (score > bestScore) {
                       bestScore = score;
                       bestResult = result;
                     }
                   }
 
-                  if (bestResult && bestScore > 0) {
+                  // Accept any feedUrl-bearing result if we matched at all, or even a
+                  // zero-score result when we have NO showName guidance — beats failing.
+                  if (bestResult && (bestScore > 0 || !showName)) {
+                    console.log('[iTunes episode search] match', { score: bestScore, show: bestResult.collectionName });
                     return {
                       feedUrl: bestResult.feedUrl,
                       podcastName: bestResult.collectionName,
@@ -5805,18 +5878,22 @@
             }
           }
 
-          // Strategy 2: Search by show name (original approach, fallback)
-          const searchQuery = encodeURIComponent(showName);
-          const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
-          if (!response.ok) throw new Error('iTunes search failed');
-          const data = await response.json();
-
-          if (data.results && data.results.length > 0) {
-            return {
-              feedUrl: data.results[0].feedUrl,
-              podcastName: data.results[0].collectionName,
-              artworkUrl: data.results[0].artworkUrl600 || data.results[0].artworkUrl100
-            };
+          // Strategy 2: Search by each show-name candidate (fallback)
+          for (const candidate of showCandidates) {
+            try {
+              const searchQuery = encodeURIComponent(candidate);
+              const response = await fetch(`https://itunes.apple.com/search?term=${searchQuery}&media=podcast&limit=5`);
+              if (!response.ok) continue;
+              const data = await response.json();
+              if (data.results && data.results.length > 0) {
+                console.log('[iTunes show search] match', { query: candidate, show: data.results[0].collectionName });
+                return {
+                  feedUrl: data.results[0].feedUrl,
+                  podcastName: data.results[0].collectionName,
+                  artworkUrl: data.results[0].artworkUrl600 || data.results[0].artworkUrl100
+                };
+              }
+            } catch (e) { continue; }
           }
           return null;
         } catch (error) {
@@ -6051,26 +6128,32 @@
           if (!metadata || metadata.showNameUncertain) {
             showToast('Looking up show details...');
             const pageMeta = await fetchSpotifyPageMetadata(url);
-            if (pageMeta && pageMeta.showName) {
+            if (pageMeta && (pageMeta.showName || pageMeta.episodeTitle)) {
+              const mergedTitle = pageMeta.episodeTitle || metadata?.title || pageMeta.showName || '';
+              const mergedShow = pageMeta.showName || metadata?.showName || mergedTitle;
               metadata = {
-                title: pageMeta.episodeTitle || metadata?.title || pageMeta.showName,
-                showName: pageMeta.showName,
+                title: mergedTitle,
+                showName: mergedShow,
                 thumbnailUrl: metadata?.thumbnailUrl,
-                showNameUncertain: false
+                showNameUncertain: !pageMeta.showName
               };
             }
           }
 
-          if (!metadata) {
+          if (!metadata || !metadata.title) {
             showToast('Could not fetch Spotify metadata - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
             return;
           }
 
+          console.log('[Spotify metadata]', metadata);
           showToast(`Found: ${metadata.title}`);
 
-          // Step 2: Search for RSS feed
-          const rssInfo = await searchForRSSFeed(metadata.showName, metadata.title);
+          // Step 2: Search for RSS feed. Pass null showName when uncertain so
+          // searchForRSSFeed leans entirely on the episode-title strategy
+          // rather than poisoning Strategy 2 with the episode title.
+          const showForSearch = metadata.showNameUncertain ? null : metadata.showName;
+          const rssInfo = await searchForRSSFeed(showForSearch, metadata.title);
           if (!rssInfo) {
             showToast('Could not find RSS feed for this podcast - try pasting the RSS feed URL instead');
             setIsLoadingPodcast(false);
