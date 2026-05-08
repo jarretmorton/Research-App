@@ -1944,6 +1944,62 @@
       const secs = Math.floor(seconds % 60);
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
+
+    // Fetch a URL through a CORS proxy and decode the body, transparently
+    // handling gzip/brotli responses where the proxy forwarded compressed
+    // bytes without a matching Content-Encoding header (so the browser never
+    // decompressed). Used by RSS feed and Spotify page scrape paths so
+    // Substack-hosted feeds (Latent Space etc.) don't fail with garbled XML.
+    const looksBinaryText = (text) => {
+      if (!text || text.length < 4) return false;
+      let bad = 0;
+      const sample = text.slice(0, 1024);
+      for (let i = 0; i < sample.length; i++) {
+        const c = sample.charCodeAt(i);
+        if (c < 32 && c !== 9 && c !== 10 && c !== 13) bad++;
+        if (c === 0xFFFD) bad++;
+      }
+      return bad / sample.length > 0.03;
+    };
+    const tryStreamDecompress = async (buf, format) => {
+      try {
+        const ds = new DecompressionStream(format);
+        const writer = ds.writable.getWriter();
+        const reader = ds.readable.getReader();
+        writer.write(buf);
+        writer.close();
+        const chunks = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        const total = chunks.reduce((a, c) => a + c.length, 0);
+        const out = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) { out.set(c, off); off += c.length; }
+        return new TextDecoder().decode(out);
+      } catch (_) { return null; }
+    };
+    const fetchTextSmart = async (proxyUrl) => {
+      const response = await fetch(proxyUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const buf = await response.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      // Gzip magic bytes (1f 8b)
+      if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+        const r = await tryStreamDecompress(buf, 'gzip');
+        if (r) return r;
+      }
+      const text = new TextDecoder().decode(buf);
+      if (looksBinaryText(text)) {
+        const r = await tryStreamDecompress(buf, 'brotli');
+        if (r && !looksBinaryText(r)) return r;
+        const g = await tryStreamDecompress(buf, 'gzip');
+        if (g && !looksBinaryText(g)) return g;
+      }
+      return text;
+    };
     // Build the title line used in copy/export text. Includes the podcast series
     // (showName) before the episode title so pasted notes identify the show.
     const formatSourceHeader = (source) => {
@@ -2710,7 +2766,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.25.2</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -5715,9 +5771,10 @@
         let bestResult = null;
         for (let i = 0; i < proxies.length; i++) {
           try {
-            const response = await fetch(proxies[i](cleanUrl));
-            if (!response.ok) continue;
-            let html = await response.text();
+            let html;
+            try {
+              html = await fetchTextSmart(proxies[i](cleanUrl));
+            } catch (_) { continue; }
             // allorigins/get returns JSON {contents}
             if (i === proxies.length - 1) {
               try { html = JSON.parse(html).contents || ''; } catch { html = ''; }
@@ -5966,16 +6023,16 @@
         let xmlText = null;
         for (const strategy of fetchStrategies) {
           try {
-            const response = await fetch(strategy.build(feedUrl));
-            if (response.ok) {
-              const raw = await response.text();
-              const text = strategy.extract(raw);
-              if (isXmlFeed(text)) {
-                xmlText = text;
-                break;
-              }
-              console.log('CORS proxy returned non-XML response, trying next...');
+            let raw;
+            try {
+              raw = await fetchTextSmart(strategy.build(feedUrl));
+            } catch (_) { continue; }
+            const text = strategy.extract(raw);
+            if (isXmlFeed(text)) {
+              xmlText = text;
+              break;
             }
+            console.log('RSS fetch returned non-XML, trying next strategy...');
           } catch (e) {
             continue;
           }
