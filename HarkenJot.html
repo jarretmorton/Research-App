@@ -880,6 +880,47 @@
       margin: 0 0 0.75rem;
       line-height: 1.4;
     }
+    .voice-search {
+      position: relative;
+      margin: 0 0 0.75rem;
+    }
+    .voice-search-input {
+      width: 100%;
+      padding: 0.55rem 2rem 0.55rem 0.75rem;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-sizing: border-box;
+      outline: none;
+    }
+    .voice-search-input:focus {
+      border-color: var(--accent);
+    }
+    .voice-search-clear {
+      position: absolute;
+      top: 50%;
+      right: 0.4rem;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: var(--bg-tertiary);
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .voice-search-clear:hover {
+      background: var(--border);
+      color: var(--text-primary);
+    }
     .voice-section-title {
       font-size: 0.75rem;
       font-weight: 600;
@@ -2893,7 +2934,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.26.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.27.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -3339,6 +3380,7 @@
     const VoiceModal = ({ show, onClose, selectedVoiceURI, setSelectedVoiceURI, showToast }) => {
       const [voices, setVoices] = useState(() => (typeof window !== 'undefined' ? window.speechSynthesis.getVoices() : []));
       const [showAllLanguages, setShowAllLanguages] = useState(false);
+      const [query, setQuery] = useState('');
       const previewUtteranceRef = useRef(null);
 
       useEffect(() => {
@@ -3347,6 +3389,12 @@
         refresh();
         window.speechSynthesis.addEventListener('voiceschanged', refresh);
         return () => window.speechSynthesis.removeEventListener('voiceschanged', refresh);
+      }, [show]);
+
+      // Reset the search box each time the modal opens so it doesn't surprise users
+      // with a stale filter on next open.
+      useEffect(() => {
+        if (show) setQuery('');
       }, [show]);
 
       // Cancel any in-flight preview when the modal closes.
@@ -3378,7 +3426,16 @@
 
       const savedVoiceMissing = !!selectedVoiceURI && voices.length > 0 && !voices.some(v => v.voiceURI === selectedVoiceURI);
 
-      const enriched = voices.map(v => ({ voice: v, ...classifyVoice(v) }));
+      const trimmedQuery = query.trim().toLowerCase();
+      const matchesQuery = (e) => {
+        if (!trimmedQuery) return true;
+        const name = (e.voice.name || '').toLowerCase();
+        const lang = (e.voice.lang || '').toLowerCase();
+        const badge = (e.badge || '').toLowerCase();
+        return name.includes(trimmedQuery) || lang.includes(trimmedQuery) || badge.includes(trimmedQuery);
+      };
+
+      const enriched = voices.map(v => ({ voice: v, ...classifyVoice(v) })).filter(matchesQuery);
       const premium = enriched.filter(e => e.tier <= 4);
       const standard = enriched.filter(e => e.tier === 5);
       const englishStandard = standard.filter(e => (e.voice.lang || '').toLowerCase().startsWith('en'));
@@ -3388,6 +3445,11 @@
       premium.sort(tierSort);
       englishStandard.sort((a, b) => (a.voice.name || '').localeCompare(b.voice.name || ''));
       otherStandard.sort((a, b) => (a.voice.lang || '').localeCompare(b.voice.lang || '') || (a.voice.name || '').localeCompare(b.voice.name || ''));
+
+      // When the user is actively searching, auto-expand "other languages" so
+      // matches there aren't hidden behind a toggle.
+      const showOtherLanguages = showAllLanguages || (!!trimmedQuery && otherStandard.length > 0);
+      const noMatches = !!trimmedQuery && premium.length === 0 && englishStandard.length === 0 && otherStandard.length === 0;
 
       const renderRow = ({ voice, badge }) => {
         const isSelected = voice.voiceURI === selectedVoiceURI;
@@ -3430,19 +3492,43 @@
                 </div>
               )}
 
-              <ul className="voice-list">
-                <li
-                  className={`voice-row voice-row-auto ${!selectedVoiceURI ? 'selected' : ''}`}
-                  onClick={() => pickVoice(null)}
-                >
-                  <div className="voice-row-main">
-                    <span className="voice-row-name">Auto — best available</span>
-                    <span className="voice-row-meta">
-                      <span className="voice-row-lang">Recommended</span>
-                    </span>
-                  </div>
-                </li>
-              </ul>
+              <div className="voice-search">
+                <input
+                  type="search"
+                  className="voice-search-input"
+                  placeholder="Search voices (name, language, e.g. Aria, en-GB, Premium)…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  autoFocus
+                />
+                {query && (
+                  <button
+                    type="button"
+                    className="voice-search-clear"
+                    onClick={() => setQuery('')}
+                    title="Clear search"
+                    aria-label="Clear search"
+                  >
+                    &times;
+                  </button>
+                )}
+              </div>
+
+              {!trimmedQuery && (
+                <ul className="voice-list">
+                  <li
+                    className={`voice-row voice-row-auto ${!selectedVoiceURI ? 'selected' : ''}`}
+                    onClick={() => pickVoice(null)}
+                  >
+                    <div className="voice-row-main">
+                      <span className="voice-row-name">Auto — best available</span>
+                      <span className="voice-row-meta">
+                        <span className="voice-row-lang">Recommended</span>
+                      </span>
+                    </div>
+                  </li>
+                </ul>
+              )}
 
               {premium.length > 0 && (
                 <>
@@ -3464,19 +3550,28 @@
 
               {otherStandard.length > 0 && (
                 <>
-                  <button
-                    type="button"
-                    className="voice-show-all"
-                    onClick={() => setShowAllLanguages(s => !s)}
-                  >
-                    {showAllLanguages ? 'Hide' : 'Show'} other languages ({otherStandard.length})
-                  </button>
-                  {showAllLanguages && (
-                    <ul className="voice-list">
-                      {otherStandard.map(renderRow)}
-                    </ul>
+                  {!trimmedQuery && (
+                    <button
+                      type="button"
+                      className="voice-show-all"
+                      onClick={() => setShowAllLanguages(s => !s)}
+                    >
+                      {showAllLanguages ? 'Hide' : 'Show'} other languages ({otherStandard.length})
+                    </button>
+                  )}
+                  {showOtherLanguages && (
+                    <>
+                      {trimmedQuery && <div className="voice-section-title">Other languages</div>}
+                      <ul className="voice-list">
+                        {otherStandard.map(renderRow)}
+                      </ul>
+                    </>
                   )}
                 </>
+              )}
+
+              {noMatches && (
+                <div className="voice-modal-hint">No voices match "{query}". Try a name (Aria), a language code (en-GB), or a tier (Premium).</div>
               )}
 
               {voices.length === 0 && (
