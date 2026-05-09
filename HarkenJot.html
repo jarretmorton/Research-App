@@ -2943,7 +2943,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.27.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.28.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6185,6 +6185,20 @@
         }
       };
 
+      // Identify whether a Spotify URL points at a show, episode, etc.
+      // Show URLs (/show/<id>) need different handling than episode URLs:
+      // oEmbed returns the show name as the title (no separator), and the
+      // page has PodcastSeries JSON-LD instead of Episode JSON-LD.
+      const getSpotifyResourceType = (rawUrl) => {
+        try {
+          const u = new URL(rawUrl);
+          const m = u.pathname.match(/\/(show|episode|playlist|album|track|artist)\//i);
+          return m ? m[1].toLowerCase() : null;
+        } catch (e) {
+          return null;
+        }
+      };
+
       // Fetch Spotify metadata using oEmbed API
       const fetchSpotifyMetadata = async (spotifyUrl) => {
         try {
@@ -6264,17 +6278,20 @@
                 const items = Array.isArray(data) ? data : [data];
                 for (const item of items) {
                   const t = item['@type'];
-                  const isEpisode = Array.isArray(t)
-                    ? t.some(x => /Episode/i.test(x))
-                    : /Episode/i.test(t || '');
+                  const typeStr = Array.isArray(t) ? t.join(' ') : (t || '');
+                  const isEpisode = /Episode/i.test(typeStr);
+                  const isSeries = /PodcastSeries|RadioSeries/i.test(typeStr);
                   if (isEpisode || item.partOfSeries) {
                     episodeTitle = item.name || episodeTitle;
                     showName = item.partOfSeries?.name || showName;
+                  } else if (isSeries) {
+                    // Show page: the JSON-LD `name` is the show itself
+                    showName = item.name || showName;
                   }
-                  if (showName) break;
+                  if (showName && episodeTitle) break;
                 }
               } catch (e) { /* skip malformed JSON-LD */ }
-              if (showName) break;
+              if (showName && episodeTitle) break;
             }
 
             // Fallback: og tags + description parsing
@@ -6286,6 +6303,11 @@
               // "Listen to this episode from <SHOW> on Spotify."
               let m = desc.match(/from\s+(.+?)\s+on\s+Spotify/i);
               if (m) showName = m[1].trim();
+              // "Listen to <SHOW> on Spotify." (show pages)
+              if (!showName) {
+                m = desc.match(/^Listen to\s+(.+?)\s+on\s+Spotify/i);
+                if (m) showName = m[1].trim();
+              }
               // "Episode · <SHOW> · <duration>"
               if (!showName) {
                 m = desc.match(/Episode[^·]*·\s*([^·]+?)\s*(?:·|$)/i);
@@ -6638,7 +6660,11 @@
         showToast('Searching for podcast feed...');
 
         try {
-          // Extract timestamp from Spotify URL (e.g., t=758 means 758 seconds)
+          const resourceType = getSpotifyResourceType(url);
+          const isShowUrl = resourceType === 'show';
+
+          // Extract timestamp from Spotify URL (e.g., t=758 means 758 seconds).
+          // Only meaningful for episode URLs.
           let startTime = null;
           try {
             const urlObj = new URL(url);
@@ -6648,6 +6674,73 @@
 
           // Step 1: Get Spotify metadata via oEmbed
           let metadata = await fetchSpotifyMetadata(url);
+
+          if (isShowUrl) {
+            // Show URL: oEmbed title IS the show name (no separator expected).
+            // Skip the episode page scrape — it's looking for Episode JSON-LD
+            // that doesn't exist on show pages.
+            let showName = metadata?.title || metadata?.showName || null;
+            if (!showName) {
+              showToast('Looking up show details...');
+              const pageMeta = await fetchSpotifyPageMetadata(url);
+              if (pageMeta?.showName) showName = pageMeta.showName;
+            }
+            if (!showName) {
+              showToast('Could not fetch Spotify show details - try pasting the RSS feed URL instead');
+              setIsLoadingPodcast(false);
+              return;
+            }
+
+            console.log('[Spotify show]', { showName });
+            showToast(`Found show: ${showName}`);
+
+            // Pass empty episodeTitle so searchForRSSFeed skips episode-level
+            // matching and resolves by show name only.
+            const rssInfo = await searchForRSSFeed(showName, '');
+            if (!rssInfo) {
+              showToast('Could not find RSS feed for this show - try pasting the RSS feed URL instead');
+              setIsLoadingPodcast(false);
+              return;
+            }
+
+            showToast(`Found feed: ${rssInfo.podcastName}`);
+
+            // Latest episode (empty title -> first item with audio)
+            const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, '');
+            if (!episode) {
+              console.log('Failed feed URL:', rssInfo.feedUrl);
+              setUrl(rssInfo.feedUrl);
+              showToast('No episodes found — feed URL pasted, try loading it directly');
+              setIsLoadingPodcast(false);
+              return;
+            }
+
+            setVideoId(null);
+            setXVideo(null);
+            setArtworkFailed(false);
+            setPodcastAudio({
+              audioUrl: episode.audioUrl,
+              title: episode.title,
+              showName: rssInfo.podcastName,
+              artworkUrl: rssInfo.artworkUrl,
+              link: episode.link || url
+            });
+
+            addSource({
+              type: 'podcast',
+              title: episode.title,
+              url: url,
+              audioUrl: episode.audioUrl,
+              showName: rssInfo.podcastName,
+              artworkUrl: rssInfo.artworkUrl,
+              link: episode.link || url
+            });
+
+            setUrl('');
+            showToast('Latest episode loaded!');
+            setIsLoadingPodcast(false);
+            return;
+          }
 
           // Step 1b: If oEmbed gave us no usable show name (e.g. for Latent
           // Space and many other modern podcasts where the oEmbed title is
