@@ -2943,7 +2943,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.27.2</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.28.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -6185,6 +6185,20 @@
         }
       };
 
+      // Identify whether a Spotify URL points at a show, episode, etc.
+      // Show URLs (/show/<id>) need different handling than episode URLs:
+      // oEmbed returns the show name as the title (no separator), and the
+      // page has PodcastSeries JSON-LD instead of Episode JSON-LD.
+      const getSpotifyResourceType = (rawUrl) => {
+        try {
+          const u = new URL(rawUrl);
+          const m = u.pathname.match(/\/(show|episode|playlist|album|track|artist)\//i);
+          return m ? m[1].toLowerCase() : null;
+        } catch (e) {
+          return null;
+        }
+      };
+
       // Fetch Spotify metadata using oEmbed API
       const fetchSpotifyMetadata = async (spotifyUrl) => {
         try {
@@ -6212,7 +6226,7 @@
             separatorFound = true;
           }
 
-          return {
+          const result = {
             title: data.title,
             showName: showName,
             thumbnailUrl: data.thumbnail_url,
@@ -6220,8 +6234,10 @@
             // separator), so they can attempt a more reliable lookup.
             showNameUncertain: !separatorFound
           };
+          console.log('[HJ:podcast] oEmbed →', { title: result.title, showName: result.showName, uncertain: result.showNameUncertain });
+          return result;
         } catch (error) {
-          console.error('Spotify oEmbed error:', error);
+          console.error('[HJ:podcast] oEmbed failed:', error?.message || error);
           return null;
         }
       };
@@ -6244,13 +6260,19 @@
         for (let i = 0; i < proxies.length; i++) {
           try {
             const response = await fetch(proxies[i](cleanUrl));
-            if (!response.ok) continue;
+            if (!response.ok) {
+              console.log(`[HJ:podcast] page-scrape proxy ${i}: http ${response.status}`);
+              continue;
+            }
             let html = await response.text();
             // allorigins/get returns JSON {contents}
             if (i === proxies.length - 1) {
               try { html = JSON.parse(html).contents || ''; } catch { html = ''; }
             }
-            if (!html || html.length < 200) continue;
+            if (!html || html.length < 200) {
+              console.log(`[HJ:podcast] page-scrape proxy ${i}: short response (${html?.length || 0} bytes)`);
+              continue;
+            }
 
             const doc = new DOMParser().parseFromString(html, 'text/html');
             let episodeTitle = null;
@@ -6264,17 +6286,20 @@
                 const items = Array.isArray(data) ? data : [data];
                 for (const item of items) {
                   const t = item['@type'];
-                  const isEpisode = Array.isArray(t)
-                    ? t.some(x => /Episode/i.test(x))
-                    : /Episode/i.test(t || '');
+                  const typeStr = Array.isArray(t) ? t.join(' ') : (t || '');
+                  const isEpisode = /Episode/i.test(typeStr);
+                  const isSeries = /PodcastSeries|RadioSeries/i.test(typeStr);
                   if (isEpisode || item.partOfSeries) {
                     episodeTitle = item.name || episodeTitle;
                     showName = item.partOfSeries?.name || showName;
+                  } else if (isSeries) {
+                    // Show page: the JSON-LD `name` is the show itself
+                    showName = item.name || showName;
                   }
-                  if (showName) break;
+                  if (showName && episodeTitle) break;
                 }
               } catch (e) { /* skip malformed JSON-LD */ }
-              if (showName) break;
+              if (showName && episodeTitle) break;
             }
 
             // Fallback: og tags + description parsing
@@ -6286,6 +6311,11 @@
               // "Listen to this episode from <SHOW> on Spotify."
               let m = desc.match(/from\s+(.+?)\s+on\s+Spotify/i);
               if (m) showName = m[1].trim();
+              // "Listen to <SHOW> on Spotify." (show pages)
+              if (!showName) {
+                m = desc.match(/^Listen to\s+(.+?)\s+on\s+Spotify/i);
+                if (m) showName = m[1].trim();
+              }
               // "Episode · <SHOW> · <duration>"
               if (!showName) {
                 m = desc.match(/Episode[^·]*·\s*([^·]+?)\s*(?:·|$)/i);
@@ -6317,7 +6347,7 @@
               }
             }
 
-            console.log('[Spotify scrape]', { proxy: i, episodeTitle, showName });
+            console.log(`[HJ:podcast] page-scrape proxy ${i}:`, { episodeTitle, showName });
 
             if (showName && episodeTitle) {
               return { episodeTitle, showName };
@@ -6332,8 +6362,12 @@
               };
               if (bestResult.episodeTitle && bestResult.showName) return bestResult;
             }
-          } catch (e) { continue; }
+          } catch (e) {
+            console.log(`[HJ:podcast] page-scrape proxy ${i}: error ${e?.message || e}`);
+            continue;
+          }
         }
+        console.log('[HJ:podcast] page-scrape final:', bestResult || 'no metadata');
         return bestResult;
       };
 
@@ -6392,7 +6426,7 @@
                   // Accept any feedUrl-bearing result if we matched at all, or even a
                   // zero-score result when we have NO showName guidance — beats failing.
                   if (bestResult && (bestScore > 0 || !showName)) {
-                    console.log('[iTunes episode search] match', { score: bestScore, show: bestResult.collectionName });
+                    console.log('[HJ:podcast] iTunes episode search match', { score: bestScore, show: bestResult.collectionName, feedUrl: bestResult.feedUrl });
                     return {
                       feedUrl: bestResult.feedUrl,
                       podcastName: bestResult.collectionName,
@@ -6402,11 +6436,14 @@
                 }
               }
             } catch (e) {
-              console.log('Episode-level iTunes search failed, trying show search:', e);
+              console.log('[HJ:podcast] iTunes episode search failed, falling back to show search:', e);
             }
           }
 
           // Strategy 2: Search by each show-name candidate (fallback)
+          // TODO(v1.29): score results against showName before picking — currently
+          // returns results[0] blindly, which silently picks the wrong podcast for
+          // shows with common-sounding names.
           for (const candidate of showCandidates) {
             try {
               const searchQuery = encodeURIComponent(candidate);
@@ -6414,7 +6451,7 @@
               if (!response.ok) continue;
               const data = await response.json();
               if (data.results && data.results.length > 0) {
-                console.log('[iTunes show search] match', { query: candidate, show: data.results[0].collectionName });
+                console.log('[HJ:podcast] iTunes show search match', { query: candidate, show: data.results[0].collectionName, feedUrl: data.results[0].feedUrl });
                 return {
                   feedUrl: data.results[0].feedUrl,
                   podcastName: data.results[0].collectionName,
@@ -6473,17 +6510,25 @@
 
       // Parse RSS feed and find episode
       const parseRSSAndFindEpisode = async (feedUrl, episodeTitle) => {
+        // Returns:
+        //   { ok: true, episode: {...} }                                 — success (incl. fallback to first audio item)
+        //   { ok: false, reason: 'fetch_failed'|'parse_error'|'no_audio_items', detail }
+        //
         // Try direct fetch first (some feeds support CORS), then CORS proxies.
         // Substack-hosted feeds (api.substack.com/feed/podcast/*.rss, used by
         // Latent Space and other Substack podcasts) intermittently fail through
         // a single proxy, so we try several formats including allorigins's JSON
         // wrapper which often succeeds when /raw is rate-limited.
         const fetchStrategies = [
-          { build: (u) => u, extract: (t) => t },
-          { build: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, extract: (t) => t },
-          { build: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`, extract: (t) => t },
-          { build: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'direct',          build: (u) => u, extract: (t) => t },
+          { name: 'allorigins/raw',  build: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'corsproxy/legacy',build: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'corsproxy/url',   build: (u) => `https://corsproxy.io/?url=${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'codetabs',        build: (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'cors.lol',        build: (u) => `https://api.cors.lol/?url=${encodeURIComponent(u)}`, extract: (t) => t },
+          { name: 'thingproxy',      build: (u) => `https://thingproxy.freeboard.io/fetch/${u}`, extract: (t) => t },
           {
+            name: 'allorigins/get',
             build: (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
             extract: (t) => { try { return JSON.parse(t).contents || ''; } catch { return ''; } }
           }
@@ -6492,26 +6537,35 @@
         const isXmlFeed = (text) => text && (text.includes('<channel') || text.includes('<feed') || text.trimStart().startsWith('<?xml'));
 
         let xmlText = null;
-        for (const strategy of fetchStrategies) {
+        const attemptOutcomes = [];
+        for (let i = 0; i < fetchStrategies.length; i++) {
+          const strategy = fetchStrategies[i];
           try {
             const response = await fetch(strategy.build(feedUrl));
-            if (response.ok) {
-              const raw = await response.text();
-              const text = strategy.extract(raw);
-              if (isXmlFeed(text)) {
-                xmlText = text;
-                break;
-              }
-              console.log('CORS proxy returned non-XML response, trying next...');
+            if (!response.ok) {
+              console.log(`[HJ:podcast] fetch ${i} (${strategy.name}): http ${response.status}`);
+              attemptOutcomes.push(`${strategy.name}:http${response.status}`);
+              continue;
             }
+            const raw = await response.text();
+            const text = strategy.extract(raw);
+            if (isXmlFeed(text)) {
+              console.log(`[HJ:podcast] fetch ${i} (${strategy.name}): ok ${text.length} bytes`);
+              attemptOutcomes.push(`${strategy.name}:ok`);
+              xmlText = text;
+              break;
+            }
+            console.log(`[HJ:podcast] fetch ${i} (${strategy.name}): non-xml ${raw.length} bytes`);
+            attemptOutcomes.push(`${strategy.name}:non-xml`);
           } catch (e) {
-            continue;
+            console.log(`[HJ:podcast] fetch ${i} (${strategy.name}): error ${e?.message || e}`);
+            attemptOutcomes.push(`${strategy.name}:err`);
           }
         }
 
         if (!xmlText) {
-          console.error('All fetch strategies failed for RSS feed:', feedUrl);
-          return null;
+          console.error('[HJ:podcast] all fetch strategies failed for', feedUrl, attemptOutcomes);
+          return { ok: false, reason: 'fetch_failed', detail: `${attemptOutcomes.length}/${fetchStrategies.length} strategies tried` };
         }
 
         try {
@@ -6521,8 +6575,8 @@
           // Check for XML parse errors
           const parseError = xml.querySelector('parsererror');
           if (parseError) {
-            console.error('XML parse error:', parseError.textContent);
-            return null;
+            console.error('[HJ:podcast] XML parse error:', parseError.textContent);
+            return { ok: false, reason: 'parse_error', detail: 'feed XML is not valid' };
           }
 
           const items = xml.querySelectorAll('item');
@@ -6621,14 +6675,20 @@
             }
           }
 
+          // Count audio-bearing items for diagnostics
+          let audioCount = 0;
+          items.forEach(item => { if (getAudioUrl(item)) audioCount++; });
+          console.log(`[HJ:podcast] parsed ${items.length} items, ${audioCount} with audio, bestScore ${bestScore}`);
+
           if (!bestMatch) {
-            console.error(`RSS feed parsed but no episodes with audio found (${items.length} items in feed)`);
+            console.error(`[HJ:podcast] feed parsed but no episodes with audio found (${items.length} items)`);
+            return { ok: false, reason: 'no_audio_items', detail: `${items.length} items, 0 with audio` };
           }
 
-          return bestMatch;
+          return { ok: true, episode: bestMatch };
         } catch (error) {
-          console.error('RSS parse error:', error);
-          return null;
+          console.error('[HJ:podcast] RSS parse error:', error);
+          return { ok: false, reason: 'parse_error', detail: error?.message || 'unknown parse error' };
         }
       };
 
@@ -6638,7 +6698,11 @@
         showToast('Searching for podcast feed...');
 
         try {
-          // Extract timestamp from Spotify URL (e.g., t=758 means 758 seconds)
+          const resourceType = getSpotifyResourceType(url);
+          const isShowUrl = resourceType === 'show';
+
+          // Extract timestamp from Spotify URL (e.g., t=758 means 758 seconds).
+          // Only meaningful for episode URLs.
           let startTime = null;
           try {
             const urlObj = new URL(url);
@@ -6648,6 +6712,81 @@
 
           // Step 1: Get Spotify metadata via oEmbed
           let metadata = await fetchSpotifyMetadata(url);
+
+          if (isShowUrl) {
+            // Show URL: oEmbed title IS the show name (no separator expected).
+            // Skip the episode page scrape — it's looking for Episode JSON-LD
+            // that doesn't exist on show pages.
+            let showName = metadata?.title || metadata?.showName || null;
+            if (!showName) {
+              showToast('Looking up show details...');
+              const pageMeta = await fetchSpotifyPageMetadata(url);
+              if (pageMeta?.showName) showName = pageMeta.showName;
+            }
+            if (!showName) {
+              showToast('Could not fetch Spotify show details - try pasting the RSS feed URL instead');
+              setIsLoadingPodcast(false);
+              return;
+            }
+
+            console.log('[HJ:podcast] show URL resolved →', { showName });
+            showToast(`Found show: ${showName}`);
+
+            // Pass empty episodeTitle so searchForRSSFeed skips episode-level
+            // matching and resolves by show name only.
+            const rssInfo = await searchForRSSFeed(showName, '');
+            if (!rssInfo) {
+              showToast('Could not find RSS feed for this show - try pasting the RSS feed URL instead');
+              setIsLoadingPodcast(false);
+              return;
+            }
+
+            showToast(`Found feed: ${rssInfo.podcastName}`);
+
+            // Latest episode (empty title -> first item with audio)
+            const result = await parseRSSAndFindEpisode(rssInfo.feedUrl, '');
+            if (!result.ok) {
+              console.log('[HJ:podcast] show-branch failure', { feedUrl: rssInfo.feedUrl, reason: result.reason, detail: result.detail });
+              if (result.reason === 'fetch_failed') {
+                setUrl(rssInfo.feedUrl);
+                showToast('Feed blocked by CORS — feed URL pasted, try loading directly');
+              } else if (result.reason === 'parse_error') {
+                setUrl(rssInfo.feedUrl);
+                showToast('Feed XML is malformed — feed URL pasted, try loading directly');
+              } else {
+                showToast('Feed has no playable episodes — wrong show match?');
+              }
+              setIsLoadingPodcast(false);
+              return;
+            }
+            const episode = result.episode;
+
+            setVideoId(null);
+            setXVideo(null);
+            setArtworkFailed(false);
+            setPodcastAudio({
+              audioUrl: episode.audioUrl,
+              title: episode.title,
+              showName: rssInfo.podcastName,
+              artworkUrl: rssInfo.artworkUrl,
+              link: episode.link || url
+            });
+
+            addSource({
+              type: 'podcast',
+              title: episode.title,
+              url: url,
+              audioUrl: episode.audioUrl,
+              showName: rssInfo.podcastName,
+              artworkUrl: rssInfo.artworkUrl,
+              link: episode.link || url
+            });
+
+            setUrl('');
+            showToast('Latest episode loaded!');
+            setIsLoadingPodcast(false);
+            return;
+          }
 
           // Step 1b: If oEmbed gave us no usable show name (e.g. for Latent
           // Space and many other modern podcasts where the oEmbed title is
@@ -6674,7 +6813,7 @@
             return;
           }
 
-          console.log('[Spotify metadata]', metadata);
+          console.log('[HJ:podcast] episode URL resolved →', metadata);
           showToast(`Found: ${metadata.title}`);
 
           // Step 2: Search for RSS feed. Pass null showName when uncertain so
@@ -6691,15 +6830,22 @@
           showToast(`Found feed: ${rssInfo.podcastName}`);
 
           // Step 3: Parse RSS and find episode
-          const episode = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
-          if (!episode) {
-            // Show feed URL so user can try loading it directly as RSS
-            console.log('Failed feed URL:', rssInfo.feedUrl);
-            setUrl(rssInfo.feedUrl);
-            showToast('Could not find episode — feed URL pasted, try loading it directly');
+          const result = await parseRSSAndFindEpisode(rssInfo.feedUrl, metadata.title);
+          if (!result.ok) {
+            console.log('[HJ:podcast] episode-branch failure', { feedUrl: rssInfo.feedUrl, reason: result.reason, detail: result.detail });
+            if (result.reason === 'fetch_failed') {
+              setUrl(rssInfo.feedUrl);
+              showToast('Feed blocked by CORS — feed URL pasted, try loading directly');
+            } else if (result.reason === 'parse_error') {
+              setUrl(rssInfo.feedUrl);
+              showToast('Feed XML is malformed — feed URL pasted, try loading directly');
+            } else {
+              showToast('Feed has no playable episodes — wrong show match?');
+            }
             setIsLoadingPodcast(false);
             return;
           }
+          const episode = result.episode;
 
           // Success! Load the audio
           setVideoId(null);
@@ -6733,7 +6879,7 @@
           setUrl(''); // Clear URL after successful load
           showToast('Podcast loaded!');
         } catch (error) {
-          console.error('Podcast loading error:', error);
+          console.error('[HJ:podcast] loading error:', error);
           showToast('Failed to load podcast');
         }
 
@@ -6746,12 +6892,20 @@
         showToast('Loading RSS feed...');
 
         try {
-          const episode = await parseRSSAndFindEpisode(feedUrl, '');
-          if (!episode) {
-            showToast('Could not find episodes in RSS feed');
+          const result = await parseRSSAndFindEpisode(feedUrl, '');
+          if (!result.ok) {
+            console.log('[HJ:podcast] loadRSSFeed failure', { feedUrl, reason: result.reason, detail: result.detail });
+            if (result.reason === 'fetch_failed') {
+              showToast('Feed blocked by CORS — host may not be reachable');
+            } else if (result.reason === 'parse_error') {
+              showToast('Feed XML is malformed');
+            } else {
+              showToast('Feed has no playable episodes');
+            }
             setIsLoadingPodcast(false);
             return;
           }
+          const episode = result.episode;
 
           const showName = episode.channelTitle || 'Podcast';
 
