@@ -819,17 +819,21 @@
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      flex-shrink: 0;
+      min-width: 0;
+      flex: 1 1 auto;
+      flex-wrap: wrap;
     }
     .speed-voice-row > .speed-control,
     .speed-voice-row > .voice-control {
-      flex: 1 1 0;
+      flex: 1 1 8rem;
       min-width: 0;
+      flex-shrink: 1;
     }
     /* In car mode the Voice button is hidden, so the speed-voice-row should
        collapse to whatever its single child needs (the existing speed-control). */
     .speed-voice-row.car-mode {
       flex-shrink: 0;
+      flex-wrap: nowrap;
     }
     .voice-control {
       display: flex;
@@ -839,6 +843,7 @@
       background: white;
       border-radius: 8px;
       border: 1px solid var(--border);
+      min-width: 0;
     }
     .voice-control label {
       font-size: 0.7rem;
@@ -2934,7 +2939,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.27.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.27.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
