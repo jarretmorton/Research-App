@@ -2943,7 +2943,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.28.1</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.29.0</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4482,6 +4482,45 @@
             }
           }
 
+          // Strategy 0.5: Substack JSON API early path
+          // Substack and custom-domain Substack sites (latent.space, astralcodexten.com,
+          // etc.) expose <origin>/api/v1/posts/<slug>, which returns clean body_html.
+          // Try this BEFORE the standard proxy chain — otherwise the proxy chain
+          // happily returns paywall previews or comment-only HTML that passes the
+          // length gate, and we never reach a clean fallback.
+          try {
+            const u = new URL(url.startsWith('http') ? url : 'https://' + url);
+            const slugMatch = u.pathname.match(/^\/p\/([^/?#]+)/);
+            if (slugMatch) {
+              showToast('Trying Substack API...');
+              const apiUrl = `${u.origin}/api/v1/posts/${slugMatch[1]}`;
+              const apiResponse = await fetchHtmlViaProxies(apiUrl);
+              if (apiResponse) {
+                try {
+                  const data = JSON.parse(apiResponse);
+                  const bodyHtml = data?.body_html || data?.body || '';
+                  if (bodyHtml && bodyHtml.length > 100) {
+                    const wrappedHtml = `<html><body>${bodyHtml}</body></html>`;
+                    const extracted = tryExtractArticle(wrappedHtml);
+                    if (extracted) {
+                      const title = data.title || extracted.title;
+                      const { text: bodyText } = extracted;
+                      const sentences = splitIntoSentences(bodyText);
+                      sentencesRef.current = sentences;
+                      addSource({ type: 'article', title, url, content: bodyText });
+                      setUrl('');
+                      showToast('Article loaded successfully!');
+                      setLoading(false);
+                      return;
+                    }
+                  }
+                } catch (_) { /* not a Substack response — fall through */ }
+              }
+            }
+          } catch (e) {
+            console.log('Substack early path failed:', e.message);
+          }
+
           // For web articles, try multiple fetch strategies
           showToast('Fetching article content...');
 
@@ -4545,40 +4584,6 @@
           // Google Webcache (webcache.googleusercontent.com) was retired in 2024 and
           // now redirects to a regular Google search results page. Importing that
           // page as the "article" produced garbage entries, so it is not used.
-
-          // Strategy 5: Substack JSON API fallback
-          // Substack (and custom-domain Substack sites like latent.space) expose
-          // a public post API at <origin>/api/v1/posts/<slug> that returns
-          // clean body_html, bypassing the Cloudflare/bot checks that often
-          // strip article content from proxy-fetched HTML.
-          if (!extracted) {
-            try {
-              const u = new URL(url.startsWith('http') ? url : 'https://' + url);
-              const slugMatch = u.pathname.match(/^\/p\/([^/?#]+)/);
-              if (slugMatch) {
-                console.log('Trying Substack JSON API...');
-                showToast('Trying Substack API...');
-                const apiUrl = `${u.origin}/api/v1/posts/${slugMatch[1]}`;
-                const apiResponse = await fetchHtmlViaProxies(apiUrl);
-                if (apiResponse) {
-                  try {
-                    const data = JSON.parse(apiResponse);
-                    const bodyHtml = data?.body_html || data?.body || '';
-                    if (bodyHtml && bodyHtml.length > 100) {
-                      const wrappedHtml = `<html><body>${bodyHtml}</body></html>`;
-                      extracted = tryExtractArticle(wrappedHtml);
-                      if (extracted) {
-                        if (data.title) extracted.title = data.title;
-                        console.log('Substack JSON API succeeded');
-                      }
-                    }
-                  } catch (e) { /* not Substack or non-JSON response */ }
-                }
-              }
-            } catch (e) {
-              console.log('Substack JSON API failed:', e.message);
-            }
-          }
 
           if (!extracted) {
             showToast('Could not extract enough content. Try pasting manually.');
