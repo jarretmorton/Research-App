@@ -2943,7 +2943,7 @@
             <div className="logo">
               <div className="logo-icon">H</div>
               <div>
-                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.29.0</span></div>
+                <div className="logo-text">HarkenJot <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontWeight: 400 }}>v1.29.1</span></div>
                 <div className="logo-tagline">Take Notes While You Listen</div>
               </div>
             </div>
@@ -4488,12 +4488,26 @@
           // Try this BEFORE the standard proxy chain — otherwise the proxy chain
           // happily returns paywall previews or comment-only HTML that passes the
           // length gate, and we never reach a clean fallback.
+          //
+          // Supported URL shapes:
+          //   <pub>.substack.com/p/<slug>             — web link
+          //   <custom-domain>/p/<slug>                — custom-domain Substack
+          //   open.substack.com/pub/<pub>/p/<slug>    — share link from the Substack app
           try {
             const u = new URL(url.startsWith('http') ? url : 'https://' + url);
-            const slugMatch = u.pathname.match(/^\/p\/([^/?#]+)/);
-            if (slugMatch) {
+            let apiOrigin = u.origin;
+            let slug = null;
+            const appShareMatch = u.pathname.match(/^\/pub\/([^/?#]+)\/p\/([^/?#]+)/);
+            const standardMatch = u.pathname.match(/^\/p\/([^/?#]+)/);
+            if (appShareMatch) {
+              apiOrigin = `https://${appShareMatch[1]}.substack.com`;
+              slug = appShareMatch[2];
+            } else if (standardMatch) {
+              slug = standardMatch[1];
+            }
+            if (slug) {
               showToast('Trying Substack API...');
-              const apiUrl = `${u.origin}/api/v1/posts/${slugMatch[1]}`;
+              const apiUrl = `${apiOrigin}/api/v1/posts/${slug}`;
               const apiResponse = await fetchHtmlViaProxies(apiUrl);
               if (apiResponse) {
                 try {
